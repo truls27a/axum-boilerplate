@@ -1,7 +1,7 @@
 use axum::{
     Router,
     body::Body,
-    http::{Request, StatusCode},
+    http::{Request, StatusCode, HeaderMap},
     extract::State,
 };
 use tower::ServiceExt;
@@ -70,7 +70,8 @@ pub async fn test_request(
     method: &str,
     uri: &str,
     body: Option<Value>,
-) -> (StatusCode, String) {
+    headers: Option<HeaderMap>,
+) -> (StatusCode, String, HeaderMap) {
     info!(method = %method, uri = %uri, "Making test request");
     
     let body = if let Some(json) = body {
@@ -80,15 +81,23 @@ pub async fn test_request(
         Body::empty()
     };
 
-    let request = Request::builder()
+    let mut request = Request::builder()
         .method(method)
         .uri(uri)
-        .header("content-type", "application/json")
-        .body(body)
-        .unwrap();
+        .header("content-type", "application/json");
+
+    // Add custom headers if provided
+    if let Some(custom_headers) = headers {
+        for (key, value) in custom_headers.iter() {
+            request = request.header(key, value);
+        }
+    }
+
+    let request = request.body(body).unwrap();
 
     let response = app.oneshot(request).await.unwrap();
     let status = response.status();
+    let headers = response.headers().clone();
     let body = String::from_utf8(
         axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -97,5 +106,5 @@ pub async fn test_request(
     ).unwrap();
 
     info!(status = %status, body = %body, "Test response received");
-    (status, body)
+    (status, body, headers)
 } 
