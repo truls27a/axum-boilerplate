@@ -3,6 +3,8 @@ use sqlx::SqlitePool;
 use dotenv::dotenv;
 use std::env;
 
+pub mod redis;
+pub use redis::RedisStore;
 
 pub async fn create_db_pool() -> SqlitePool {
     // Load .env file
@@ -22,3 +24,7 @@ pub async fn create_db_pool() -> SqlitePool {
         
     pool
 }
+
+pub fn create_redis_store() -> RedisStore {
+    RedisStore::new().expect("Failed to create Redis store")
+} 

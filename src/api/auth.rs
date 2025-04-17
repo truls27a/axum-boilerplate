@@ -4,9 +4,9 @@ use axum::{
     extract::State,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 
 use crate::services::auth_service::{AuthService, AuthError};
+use crate::AppState;
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -32,13 +32,13 @@ pub struct RegisterResponse {
 }
 
 pub async fn login(
-    State(pool): State<SqlitePool>,
+    State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, StatusCode> {
-    let auth_service = AuthService::new(pool);
+    let auth_service = AuthService::new(state.db);
     
     let token = auth_service
-        .login(&payload.email, &payload.password)
+        .login(&payload.email, &payload.password, &state.redis)
         .await
         .map_err(|e| match e {
             AuthError::InvalidCredentials => StatusCode::UNAUTHORIZED,
@@ -49,10 +49,10 @@ pub async fn login(
 }
 
 pub async fn register(
-    State(pool): State<SqlitePool>,
+    State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, StatusCode> {
-    let auth_service = AuthService::new(pool);
+    let auth_service = AuthService::new(state.db);
     
     let id = auth_service
         .register(&payload.username, &payload.password, &payload.email)

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
 use dotenv::dotenv;
 use std::env;
+use crate::db::RedisStore;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -24,7 +25,7 @@ impl Claims {
     }
 }
 
-pub fn create_token(user_id: i64) -> Result<String, JwtError> {
+pub async fn create_token(user_id: i64, redis_store: &RedisStore) -> Result<String, JwtError> {
     let claims = Claims::new(user_id);
 
     // Load .env file
@@ -32,16 +33,43 @@ pub fn create_token(user_id: i64) -> Result<String, JwtError> {
 
     let secret = env::var("SECRET_KEY").expect("SECRET_KEY must be set");
 
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()))
+    let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()))?;
+    
+    // Store token in Redis
+    redis_store.store_token(user_id, &token, claims.exp)
+        .await
+        .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
+
+    Ok(token)
 }
 
-pub fn decode_token(token: &str) -> Result<Claims, JwtError> {
+pub async fn decode_token(token: &str, redis_store: &RedisStore) -> Result<Claims, JwtError> {
     dotenv().ok();
     let secret = env::var("SECRET_KEY").expect("SECRET_KEY must be set");
     
-    decode::<Claims>(
+    // First validate token in Redis
+    let user_id = redis_store.validate_token(token)
+        .await
+        .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?
+        .ok_or_else(|| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
+    
+    // Then decode JWT
+    let token_data = decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
         &Validation::default()
-    ).map(|data| data.claims)
+    )?;
+    
+    // Verify the user_id matches
+    if token_data.claims.sub != user_id {
+        return Err(JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken));
+    }
+    
+    Ok(token_data.claims)
+}
+
+pub async fn invalidate_token(token: &str, redis_store: &RedisStore) -> Result<(), JwtError> {
+    redis_store.invalidate_token(token)
+        .await
+        .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))
 } 

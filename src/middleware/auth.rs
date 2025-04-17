@@ -6,18 +6,18 @@ use axum::{
     response::Response,
     body::Body,
 };
-use sqlx::SqlitePool;
 
 use crate::{
     models::user::User,
     services::auth_service::AuthService,
+    AppState,
 };
 
 #[derive(Clone)]
 pub struct CurrentUser(pub User);
 
 pub async fn auth_middleware(
-    State(pool): State<SqlitePool>,
+    State(state): State<AppState>,
     mut request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
@@ -37,9 +37,9 @@ pub async fn auth_middleware(
     let token = &auth_header["Bearer ".len()..];
     
     // Verify the token and get the user
-    let auth_service = AuthService::new(pool);
+    let auth_service = AuthService::new(state.db);
     let user = auth_service
-        .verify_token(token)
+        .verify_token(token, &state.redis)
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 

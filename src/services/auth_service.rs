@@ -3,6 +3,7 @@ use bcrypt::verify;
 
 use crate::models::user::User;
 use crate::utils::jwt;
+use crate::db::RedisStore;
 
 #[derive(Clone)]
 pub struct AuthService {
@@ -35,7 +36,7 @@ impl AuthService {
         Self { pool }
     }
 
-    pub async fn login(&self, email: &str, password: &str) -> Result<String, AuthError> {
+    pub async fn login(&self, email: &str, password: &str, redis_store: &RedisStore) -> Result<String, AuthError> {
         // Find user by email
         let user = User::find_by_email(&self.pool, email)
             .await
@@ -51,7 +52,8 @@ impl AuthService {
         }
 
         // Generate JWT token
-        let token = jwt::create_token(user.id)
+        let token = jwt::create_token(user.id, redis_store)
+            .await
             .map_err(|_| AuthError::TokenError)?;
 
         Ok(token)
@@ -70,9 +72,11 @@ impl AuthService {
         Ok(user.id)
     }
 
-    pub async fn verify_token(&self, token: &str) -> Result<User, AuthError> {
+    pub async fn verify_token(&self, token: &str, redis_store: &RedisStore) -> Result<User, AuthError> {
         // Decode and verify the token
-        let claims = jwt::decode_token(token)?;
+        let claims = jwt::decode_token(token, redis_store)
+            .await
+            .map_err(|_| AuthError::TokenError)?;
         
         // Find user by ID
         let user = User::find_by_id(&self.pool, claims.sub)

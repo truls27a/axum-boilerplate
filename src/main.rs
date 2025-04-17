@@ -18,6 +18,12 @@ mod middleware;
 #[cfg(test)]
 mod tests;
 
+#[derive(Clone)]
+pub struct AppState {
+    db: SqlitePool,
+    redis: db::RedisStore,
+}
+
 #[derive(Serialize)]
 struct Message {
     message: String,
@@ -29,7 +35,12 @@ async fn hello_world() -> Json<Message> {
     })
 }
 
-pub fn create_router(pool: SqlitePool) -> Router {
+pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
+    let state = AppState {
+        db: pool,
+        redis: redis_store,
+    };
+
     // Create a CORS layer
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -39,7 +50,7 @@ pub fn create_router(pool: SqlitePool) -> Router {
     // Create protected routes
     let protected_routes = Router::new()
         .route("/me", get(api::user::get_current_user))
-        .layer(from_fn_with_state(pool.clone(), middleware::auth::auth_middleware));
+        .layer(from_fn_with_state(state.clone(), middleware::auth::auth_middleware));
 
     // build our application with routes
     Router::new()
@@ -48,7 +59,7 @@ pub fn create_router(pool: SqlitePool) -> Router {
         .route("/register", post(api::auth::register))
         .merge(protected_routes)
         .layer(cors)
-        .with_state(pool)
+        .with_state(state)
 }
 
 #[tokio::main]
@@ -58,9 +69,12 @@ async fn main() {
 
     // Initialize database
     let pool = db::create_db_pool().await;
+    
+    // Initialize Redis
+    let redis_store = db::create_redis_store();
 
     // Create the router
-    let app = create_router(pool);
+    let app = create_router(pool, redis_store);
 
     // run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
