@@ -27,10 +27,13 @@ mod middleware;
 #[cfg(test)]
 mod tests;
 
+use services::jwt_service::JwtService;
+
 #[derive(Clone)]
 pub struct AppState {
     db: SqlitePool,
     redis: db::RedisStore,
+    jwt_service: JwtService,
 }
 
 #[derive(Serialize)]
@@ -45,9 +48,17 @@ async fn hello_world() -> Json<Message> {
 }
 
 pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
+    // Get the secret key from environment
+    dotenv::dotenv().ok();
+    let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY must be set");
+    
+    // Create the JWT service
+    let jwt_service = JwtService::new(redis_store.clone(), secret_key);
+
     let state = AppState {
         db: pool,
         redis: redis_store,
+        jwt_service,
     };
 
     // Create a CORS layer

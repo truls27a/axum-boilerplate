@@ -3,12 +3,14 @@ use bcrypt::verify;
 use tracing::{info, warn, error, instrument};
 
 use crate::models::user::User;
-use crate::utils::jwt;
+use crate::models::jwt::TokenPair;
+use crate::services::jwt_service::JwtService;
 use crate::db::RedisStore;
 
 #[derive(Clone)]
 pub struct AuthService {
     pool: SqlitePool,
+    jwt_service: JwtService,
 }
 
 #[derive(Debug)]
@@ -34,12 +36,15 @@ impl From<jsonwebtoken::errors::Error> for AuthError {
 }
 
 impl AuthService {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, jwt_service: JwtService) -> Self {
+        Self { 
+            pool,
+            jwt_service,
+        }
     }
 
-    #[instrument(skip(self, password, redis_store))]
-    pub async fn login(&self, email: &str, password: &str, redis_store: &RedisStore) -> Result<jwt::TokenPair, AuthError> {
+    #[instrument(skip(self, password))]
+    pub async fn login(&self, email: &str, password: &str) -> Result<TokenPair, AuthError> {
         info!(email = %email, "Login attempt");
         
         // Find user by email
@@ -70,7 +75,7 @@ impl AuthService {
         }
 
         // Generate JWT tokens
-        match jwt::create_token_pair(user.id, redis_store).await {
+        match self.jwt_service.create_token_pair(user.id).await {
             Ok(token_pair) => {
                 info!(user_id = %user.id, email = %email, "User successfully logged in");
                 Ok(token_pair)
@@ -114,10 +119,10 @@ impl AuthService {
         }
     }
 
-    #[instrument(skip(self, redis_store))]
-    pub async fn verify_token(&self, token: &str, redis_store: &RedisStore) -> Result<User, AuthError> {
+    #[instrument(skip(self))]
+    pub async fn verify_token(&self, token: &str) -> Result<User, AuthError> {
         // Decode and verify the token
-        let claims = match jwt::decode_access_token(token, redis_store).await {
+        let claims = match self.jwt_service.decode_access_token(token).await {
             Ok(claims) => claims,
             Err(e) => {
                 warn!(error = %e, "Invalid token verification attempt");
@@ -138,9 +143,9 @@ impl AuthService {
         }
     }
 
-    #[instrument(skip(self, redis_store))]
-    pub async fn refresh_token(&self, refresh_token: &str, redis_store: &RedisStore) -> Result<String, AuthError> {
-        match jwt::refresh_access_token(refresh_token, redis_store).await {
+    #[instrument(skip(self))]
+    pub async fn refresh_token(&self, refresh_token: &str) -> Result<String, AuthError> {
+        match self.jwt_service.refresh_access_token(refresh_token).await {
             Ok(new_access_token) => {
                 info!("Successfully refreshed access token");
                 Ok(new_access_token)

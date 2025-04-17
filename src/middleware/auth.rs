@@ -37,9 +37,9 @@ pub async fn auth_middleware(
     let token = &auth_header["Bearer ".len()..];
     
     // Verify the token and get the user
-    let auth_service = AuthService::new(state.db);
+    let auth_service = AuthService::new(state.db, state.jwt_service);
     let user = auth_service
-        .verify_token(token, &state.redis)
+        .verify_token(token)
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 

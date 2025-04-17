@@ -41,10 +41,10 @@ pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<TokenResponse>), StatusCode> {
-    let auth_service = AuthService::new(state.db);
+    let auth_service = AuthService::new(state.db, state.jwt_service);
     
     let token_pair = auth_service
-        .login(&payload.email, &payload.password, &state.redis)
+        .login(&payload.email, &payload.password)
         .await
         .map_err(|e| match e {
             AuthError::InvalidCredentials => StatusCode::UNAUTHORIZED,
@@ -62,7 +62,7 @@ pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, StatusCode> {
-    let auth_service = AuthService::new(state.db);
+    let auth_service = AuthService::new(state.db, state.jwt_service);
     
     let id = auth_service
         .register(&payload.username, &payload.password, &payload.email)
@@ -79,10 +79,10 @@ pub async fn refresh_token(
     let refresh_token = CookieManager::extract_refresh_token(&headers)
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let auth_service = AuthService::new(state.db);
+    let auth_service = AuthService::new(state.db, state.jwt_service);
     
     let new_access_token = auth_service
-        .refresh_token(&refresh_token, &state.redis)
+        .refresh_token(&refresh_token)
         .await
         .map_err(|e| match e {
             AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
@@ -99,8 +99,8 @@ pub async fn logout(
     headers: HeaderMap,
 ) -> Result<HeaderMap, StatusCode> {
     if let Some(token) = CookieManager::extract_refresh_token(&headers) {
-        // Invalidate the refresh token in Redis
-        if let Err(_) = state.redis.invalidate_refresh_token(&token).await {
+        // Invalidate the refresh token using jwt_service
+        if let Err(_) = state.jwt_service.invalidate_tokens("", &token).await {
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     }
