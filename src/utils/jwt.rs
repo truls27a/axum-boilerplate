@@ -1,3 +1,5 @@
+// TODO: Add refresh tokens
+
 use jsonwebtoken::{encode, decode, EncodingKey, DecodingKey, Header, Validation, errors::Error as JwtError};
 use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
