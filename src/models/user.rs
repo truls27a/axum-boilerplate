@@ -41,7 +41,7 @@ impl User {
         Ok(user)
     }
 
-    pub async fn find_by_username(pool: &SqlitePool, username: &str) -> Result<Option<User>, sqlx::Error> {
+    pub async fn find_by_email(pool: &SqlitePool, email: &str) -> Result<Option<User>, sqlx::Error> {
         sqlx::query_as!(
             User,
             r#"
@@ -51,9 +51,9 @@ impl User {
                 password_hash as "password_hash!",
                 email as "email!"
             FROM users
-            WHERE username = ?
+            WHERE email = ?
             "#,
-            username
+            email
         )
         .fetch_optional(pool)
         .await

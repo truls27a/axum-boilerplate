@@ -3,13 +3,13 @@ use serde_json::{json, Value};
 use crate::models::user::User;
 use super::helpers::{setup_test_db, create_test_app, test_request};
 
-async fn create_test_user(pool: &sqlx::SqlitePool, username: &str, password: &str) -> User {
+async fn create_test_user(pool: &sqlx::SqlitePool, username: &str, password: &str, email: &str) -> User {
     // Create a test user
     User::create(
         pool,
         username,
         password,
-        "test@example.com",
+        email,
     )
     .await
     .expect("Failed to create test user")
@@ -20,17 +20,18 @@ async fn test_login_success() {
     // Setup
     let pool = setup_test_db().await;
     let username = "testuser";
+    let email = "test@example.com";
     let password = "password123";
     
     // Create user in the test database
-    let _user = create_test_user(&pool, username, password).await;
+    let _user = create_test_user(&pool, username, password, email).await;
     
     // Create app with the same database pool
     let app = create_test_app(pool);
 
     // Test login
     let login_data = json!({
-        "username": username,
+        "email": email,
         "password": password,
     });
 
@@ -53,17 +54,18 @@ async fn test_login_invalid_password() {
     // Setup
     let pool = setup_test_db().await;
     let username = "testuser";
+    let email = "test@example.com";
     let password = "password123";
     
     // Create user in the test database
-    let _user = create_test_user(&pool, username, password).await;
+    let _user = create_test_user(&pool, username, password, email).await;
     
     // Create app with the same database pool
     let app = create_test_app(pool);
 
     // Test login with wrong password
     let login_data = json!({
-        "username": username,
+        "email": email,
         "password": "wrongpassword",
     });
 
@@ -83,7 +85,7 @@ async fn test_login_nonexistent_user() {
     let app = create_test_app(pool);
 
     let login_data = json!({
-        "username": "nonexistent",
+        "email": "nonexistent@example.com",
         "password": "password123",
     });
 
