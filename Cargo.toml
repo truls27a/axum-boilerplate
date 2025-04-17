@@ -14,3 +14,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "migrate"] }
 dotenv = "0.15"
+bcrypt = "0.15"
+jsonwebtoken = "9.2"
+chrono = "0.4"

@@ -10,6 +10,8 @@ use sqlx::SqlitePool;
 
 mod db;
 mod api;
+mod models;
+mod utils;
 
 #[derive(Serialize)]
 struct Message {
