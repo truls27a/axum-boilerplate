@@ -1,11 +1,12 @@
 use axum::{
     Json,
-    http::StatusCode,
+    http::{StatusCode, HeaderMap},
     extract::State,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::services::auth_service::{AuthService, AuthError};
+use crate::utils::cookies::CookieManager;
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -22,11 +23,6 @@ pub struct RegisterRequest {
 }
 
 #[derive(Serialize)]
-pub struct LoginResponse {
-    token: String,
-}
-
-#[derive(Serialize)]
 pub struct RegisterResponse {
     id: i64,
 }
@@ -34,7 +30,6 @@ pub struct RegisterResponse {
 #[derive(Serialize)]
 pub struct TokenResponse {
     access_token: String,
-    refresh_token: String,
 }
 
 #[derive(Serialize)]
@@ -42,15 +37,10 @@ pub struct RefreshTokenResponse {
     access_token: String,
 }
 
-#[derive(Deserialize)]
-pub struct RefreshTokenRequest {
-    refresh_token: String,
-}
-
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<TokenResponse>, StatusCode> {
+) -> Result<(HeaderMap, Json<TokenResponse>), StatusCode> {
     let auth_service = AuthService::new(state.db);
     
     let token_pair = auth_service
@@ -61,10 +51,11 @@ pub async fn login(
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         })?;
 
-    Ok(Json(TokenResponse { 
+    let headers = CookieManager::create_refresh_token_cookie(&token_pair.refresh_token);
+
+    Ok((headers, Json(TokenResponse { 
         access_token: token_pair.access_token,
-        refresh_token: token_pair.refresh_token,
-    }))
+    })))
 }
 
 pub async fn register(
@@ -83,19 +74,36 @@ pub async fn register(
 
 pub async fn refresh_token(
     State(state): State<AppState>,
-    Json(payload): Json<RefreshTokenRequest>,
-) -> Result<Json<RefreshTokenResponse>, StatusCode> {
+    headers: HeaderMap,
+) -> Result<(HeaderMap, Json<RefreshTokenResponse>), StatusCode> {
+    let refresh_token = CookieManager::extract_refresh_token(&headers)
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
     let auth_service = AuthService::new(state.db);
     
     let new_access_token = auth_service
-        .refresh_token(&payload.refresh_token, &state.redis)
+        .refresh_token(&refresh_token, &state.redis)
         .await
         .map_err(|e| match e {
             AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         })?;
 
-    Ok(Json(RefreshTokenResponse { 
+    Ok((HeaderMap::new(), Json(RefreshTokenResponse { 
         access_token: new_access_token 
-    }))
+    })))
+}
+
+pub async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<HeaderMap, StatusCode> {
+    if let Some(token) = CookieManager::extract_refresh_token(&headers) {
+        // Invalidate the refresh token in Redis
+        if let Err(_) = state.redis.invalidate_refresh_token(&token).await {
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    Ok(CookieManager::clear_refresh_token_cookie())
 }

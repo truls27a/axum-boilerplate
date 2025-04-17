@@ -46,7 +46,8 @@ pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_headers(Any)
+        .allow_credentials(true);
 
     // Create protected routes
     let protected_routes = Router::new()
@@ -59,6 +60,7 @@ pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
         .route("/login", post(api::auth::login))
         .route("/register", post(api::auth::register))
         .route("/refresh", post(api::auth::refresh_token))
+        .route("/logout", post(api::auth::logout))
         .merge(protected_routes)
         .layer(cors)
         .with_state(state)
