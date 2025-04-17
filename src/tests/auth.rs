@@ -1,35 +1,62 @@
+#[cfg(test)]
 use axum::http::StatusCode;
 use serde_json::{json, Value};
-use crate::models::user::User;
 use super::helpers::{setup_test_db, create_test_app, test_request};
 
-async fn create_test_user(pool: &sqlx::SqlitePool, username: &str, password: &str, email: &str) -> User {
-    // Create a test user
-    User::create(
-        pool,
-        username,
-        password,
-        email,
-    )
-    .await
-    .expect("Failed to create test user")
+#[tokio::test]
+async fn test_register_success() {
+    let pool = setup_test_db().await;
+    let app = create_test_app(pool);
+
+    let username = "testuser";
+    let email = "test@example.com";
+    let password = "password123";
+
+    let register_data = json!({
+        "username": username,
+        "email": email,
+        "password": password
+    });
+
+    let (status, body) = test_request(
+        app,
+        "POST",
+        "/register",
+        Some(register_data),
+    ).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let response: Value = serde_json::from_str(&body).unwrap();
+    assert!(response.get("id").is_some());
 }
 
 #[tokio::test]
 async fn test_login_success() {
     // Setup
     let pool = setup_test_db().await;
+    let app = create_test_app(pool.clone());
+
     let username = "testuser";
     let email = "test@example.com";
     let password = "password123";
-    
-    // Create user in the test database
-    let _user = create_test_user(&pool, username, password, email).await;
-    
-    // Create app with the same database pool
-    let app = create_test_app(pool);
 
-    // Test login
+    // First register a user
+    let register_data = json!({
+        "username": username,
+        "email": email,
+        "password": password
+    });
+
+    let (status, _) = test_request(
+        app.clone(),
+        "POST",
+        "/register",
+        Some(register_data),
+    ).await;
+
+    assert_eq!(status, StatusCode::OK);
+
+    // Now test login
     let login_data = json!({
         "email": email,
         "password": password,
@@ -53,20 +80,33 @@ async fn test_login_success() {
 async fn test_login_invalid_password() {
     // Setup
     let pool = setup_test_db().await;
+    let app = create_test_app(pool.clone());
+
     let username = "testuser";
     let email = "test@example.com";
     let password = "password123";
-    
-    // Create user in the test database
-    let _user = create_test_user(&pool, username, password, email).await;
-    
-    // Create app with the same database pool
-    let app = create_test_app(pool);
+    let wrong_password = "wrongpassword";
+
+    // First register a user
+    let register_data = json!({
+        "username": username,
+        "email": email,
+        "password": password
+    });
+
+    let (status, _) = test_request(
+        app.clone(),
+        "POST",
+        "/register",
+        Some(register_data),
+    ).await;
+
+    assert_eq!(status, StatusCode::OK);
 
     // Test login with wrong password
     let login_data = json!({
         "email": email,
-        "password": "wrongpassword",
+        "password": wrong_password,
     });
 
     let (status, _) = test_request(
@@ -84,9 +124,12 @@ async fn test_login_nonexistent_user() {
     let pool = setup_test_db().await;
     let app = create_test_app(pool);
 
+    let email = "nonexistent@example.com";
+    let password = "password123";
+
     let login_data = json!({
-        "email": "nonexistent@example.com",
-        "password": "password123",
+        "email": email,
+        "password": password,
     });
 
     let (status, _) = test_request(
