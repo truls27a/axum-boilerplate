@@ -7,8 +7,16 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
+use http::{
+    Method, 
+    HeaderValue, 
+    HeaderName,
+    header::{AUTHORIZATION, ACCEPT, CONTENT_TYPE},
+};
 use sqlx::SqlitePool;
 use tracing::{info, warn, error, Level};
+use std::time::Duration;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod db;
 mod api;
@@ -44,10 +52,11 @@ pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
 
     // Create a CORS layer
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any)
-        .allow_credentials(true);
+        .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers([AUTHORIZATION, ACCEPT, CONTENT_TYPE])
+        .allow_credentials(true)
+        .max_age(Duration::from_secs(3600));
 
     // Create protected routes
     let protected_routes = Router::new()
