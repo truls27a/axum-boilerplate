@@ -1,13 +1,18 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use dotenv::dotenv;
+use std::env;
 
 
 pub async fn create_db_pool() -> SqlitePool {
-    // Create SQLite database file if it doesn't exist
-    let db_url = "sqlite:users.db";
+    // Load .env file
+    dotenv().ok();
+    
+    // Get database URL from environment variable
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     
     // Create connection pool
-    let pool = SqlitePool::connect(db_url).await.unwrap();
+    let pool = SqlitePool::connect(&db_url).await.unwrap();
     
     // Run migrations
     sqlx::migrate!()
