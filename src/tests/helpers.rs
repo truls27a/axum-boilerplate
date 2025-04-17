@@ -7,6 +7,7 @@ use axum::{
 use tower::ServiceExt;
 use serde_json::Value;
 use sqlx::SqlitePool;
+use crate::db::RedisStore;
 
 pub async fn setup_test_db() -> SqlitePool {
     // Create a new in-memory SQLite database for testing
@@ -23,8 +24,13 @@ pub async fn setup_test_db() -> SqlitePool {
     pool
 }
 
+pub fn setup_test_redis() -> RedisStore {
+    RedisStore::new().expect("Failed to create test Redis store")
+}
+
 pub fn create_test_app(pool: SqlitePool) -> Router {
-    super::super::create_router(pool)
+    let redis_store = setup_test_redis();
+    super::super::create_router(pool, redis_store)
 }
 
 pub async fn test_request(
