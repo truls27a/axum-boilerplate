@@ -58,6 +58,7 @@ pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
         .route("/", get(hello_world))
         .route("/login", post(api::auth::login))
         .route("/register", post(api::auth::register))
+        .route("/refresh", post(api::auth::refresh_token))
         .merge(protected_routes)
         .layer(cors)
         .with_state(state)

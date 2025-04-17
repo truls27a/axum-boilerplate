@@ -17,6 +17,7 @@ pub enum AuthError {
     DatabaseError(sqlx::Error),
     PasswordHashError,
     TokenError,
+    InvalidToken,
     UserNotFound,
 }
 
@@ -38,7 +39,7 @@ impl AuthService {
     }
 
     #[instrument(skip(self, password, redis_store))]
-    pub async fn login(&self, email: &str, password: &str, redis_store: &RedisStore) -> Result<String, AuthError> {
+    pub async fn login(&self, email: &str, password: &str, redis_store: &RedisStore) -> Result<jwt::TokenPair, AuthError> {
         info!(email = %email, "Login attempt");
         
         // Find user by email
@@ -68,11 +69,11 @@ impl AuthService {
             return Err(AuthError::InvalidCredentials);
         }
 
-        // Generate JWT token
-        match jwt::create_token(user.id, redis_store).await {
-            Ok(token) => {
+        // Generate JWT tokens
+        match jwt::create_token_pair(user.id, redis_store).await {
+            Ok(token_pair) => {
                 info!(user_id = %user.id, email = %email, "User successfully logged in");
-                Ok(token)
+                Ok(token_pair)
             }
             Err(e) => {
                 error!(error = %e, "Token generation error");
@@ -116,7 +117,7 @@ impl AuthService {
     #[instrument(skip(self, redis_store))]
     pub async fn verify_token(&self, token: &str, redis_store: &RedisStore) -> Result<User, AuthError> {
         // Decode and verify the token
-        let claims = match jwt::decode_token(token, redis_store).await {
+        let claims = match jwt::decode_access_token(token, redis_store).await {
             Ok(claims) => claims,
             Err(e) => {
                 warn!(error = %e, "Invalid token verification attempt");
@@ -133,6 +134,20 @@ impl AuthService {
             None => {
                 warn!(user_id = %claims.sub, "Token verification failed - user not found");
                 Err(AuthError::UserNotFound)
+            }
+        }
+    }
+
+    #[instrument(skip(self, redis_store))]
+    pub async fn refresh_token(&self, refresh_token: &str, redis_store: &RedisStore) -> Result<String, AuthError> {
+        match jwt::refresh_access_token(refresh_token, redis_store).await {
+            Ok(new_access_token) => {
+                info!("Successfully refreshed access token");
+                Ok(new_access_token)
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to refresh access token");
+                Err(AuthError::InvalidToken)
             }
         }
     }
