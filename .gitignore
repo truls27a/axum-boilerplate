@@ -1,3 +1,45 @@
+# Rust specific
 /target
+debug/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Environment variables
 .env
-users.db
+.env.*
+!.env.example
+
+# Database
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+dump.rdb
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Dependencies
+vendor/
+
+# Logs
+logs/
+*.log
+
+# Redis
+*.rdb
+redis-data/
+dump.rdb
+
+# Build output
+dist/
+build/
+out/
+
+# Testing
+coverage/
