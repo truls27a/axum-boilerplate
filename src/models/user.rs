@@ -57,5 +57,23 @@ impl User {
         )
         .fetch_optional(pool)
         .await
+    }
+
+    pub async fn find_by_id(pool: &SqlitePool, user_id: i64) -> Result<Option<User>, sqlx::Error> {
+        sqlx::query_as!(
+            User,
+            r#"
+            SELECT 
+                id as "id!", 
+                username as "username!", 
+                password_hash as "password_hash!",
+                email as "email!"
+            FROM users
+            WHERE id = ?
+            "#,
+            user_id
+        )
+        .fetch_optional(pool)
+        .await
     }    
 } 

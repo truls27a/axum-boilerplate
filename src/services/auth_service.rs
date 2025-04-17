@@ -15,11 +15,18 @@ pub enum AuthError {
     DatabaseError(sqlx::Error),
     PasswordHashError,
     TokenError,
+    UserNotFound,
 }
 
 impl From<sqlx::Error> for AuthError {
     fn from(err: sqlx::Error) -> Self {
         AuthError::DatabaseError(err)
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for AuthError {
+    fn from(_: jsonwebtoken::errors::Error) -> Self {
+        AuthError::TokenError
     }
 }
 
@@ -61,5 +68,17 @@ impl AuthService {
             .map_err(AuthError::from)?;
 
         Ok(user.id)
+    }
+
+    pub async fn verify_token(&self, token: &str) -> Result<User, AuthError> {
+        // Decode and verify the token
+        let claims = jwt::decode_token(token)?;
+        
+        // Find user by ID
+        let user = User::find_by_id(&self.pool, claims.sub)
+            .await?
+            .ok_or(AuthError::UserNotFound)?;
+
+        Ok(user)
     }
 } 

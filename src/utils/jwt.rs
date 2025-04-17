@@ -1,4 +1,4 @@
-use jsonwebtoken::{encode, EncodingKey, Header, errors::Error as JwtError};
+use jsonwebtoken::{encode, decode, EncodingKey, DecodingKey, Header, Validation, errors::Error as JwtError};
 use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
 use dotenv::dotenv;
@@ -33,4 +33,15 @@ pub fn create_token(user_id: i64) -> Result<String, JwtError> {
     let secret = env::var("SECRET_KEY").expect("SECRET_KEY must be set");
 
     encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()))
+}
+
+pub fn decode_token(token: &str) -> Result<Claims, JwtError> {
+    dotenv().ok();
+    let secret = env::var("SECRET_KEY").expect("SECRET_KEY must be set");
+    
+    decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &Validation::default()
+    ).map(|data| data.claims)
 } 
