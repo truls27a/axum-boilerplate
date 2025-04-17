@@ -29,7 +29,8 @@ impl CookieManager {
     }
 
     pub fn extract_refresh_token(headers: &HeaderMap) -> Option<String> {
-        headers
+        // First try to get from Cookie header (client-side)
+        let cookie_header = headers
             .get(COOKIE)
             .and_then(|value| value.to_str().ok())
             .and_then(|cookies| {
@@ -37,6 +38,26 @@ impl CookieManager {
                     .find(|cookie| cookie.trim().starts_with(REFRESH_TOKEN_COOKIE))
                     .and_then(|cookie| cookie.split('=').nth(1))
                     .map(|token| token.trim().to_string())
+            });
+
+        if cookie_header.is_some() {
+            return cookie_header;
+        }
+
+        // TODO: Check if this is correct
+        // If not found, try Set-Cookie header (server-side)
+        headers
+            .get(SET_COOKIE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|cookie| {
+                if cookie.starts_with(REFRESH_TOKEN_COOKIE) {
+                    cookie.split(';')
+                        .next()
+                        .and_then(|cookie_pair| cookie_pair.split('=').nth(1))
+                        .map(|token| token.trim().to_string())
+                } else {
+                    None
+                }
             })
     }
 } 
