@@ -12,6 +12,8 @@ mod db;
 mod api;
 mod models;
 mod utils;
+#[cfg(test)]
+mod tests;
 
 #[derive(Serialize)]
 struct Message {
@@ -24,6 +26,20 @@ async fn hello_world() -> Json<Message> {
     })
 }
 
+pub fn create_router(pool: SqlitePool) -> Router {
+    // Create a CORS layer
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    // build our application with routes
+    Router::new()
+        .route("/", get(hello_world))
+        .route("/login", post(api::auth::login))
+        .layer(cors)
+        .with_state(pool)
+}
 
 #[tokio::main]
 async fn main() {
@@ -33,18 +49,8 @@ async fn main() {
     // Initialize database
     let pool = db::create_db_pool().await;
 
-    // Create a CORS layer
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
-    // build our application with routes
-    let app = Router::new()
-        .route("/", get(hello_world))
-        .route("/login", post(api::auth::login))
-        .layer(cors)
-        .with_state(pool);
+    // Create the router
+    let app = create_router(pool);
 
     // run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
