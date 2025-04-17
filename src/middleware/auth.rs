@@ -4,6 +4,7 @@ use axum::{
     http::{Request, StatusCode},
     middleware::Next,
     response::Response,
+    body::Body,
 };
 use sqlx::SqlitePool;
 
@@ -15,10 +16,10 @@ use crate::{
 #[derive(Clone)]
 pub struct CurrentUser(pub User);
 
-pub async fn auth_middleware<B>(
+pub async fn auth_middleware(
     State(pool): State<SqlitePool>,
-    mut request: Request<B>,
-    next: Next<B>,
+    mut request: Request<Body>,
+    next: Next,
 ) -> Result<Response, StatusCode> {
     // Get the authorization header
     let auth_header = request
