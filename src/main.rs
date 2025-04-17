@@ -37,6 +37,7 @@ pub fn create_router(pool: SqlitePool) -> Router {
     Router::new()
         .route("/", get(hello_world))
         .route("/login", post(api::auth::login))
+        .route("/register", post(api::auth::register))
         .layer(cors)
         .with_state(pool)
 }
