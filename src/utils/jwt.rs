@@ -1,6 +1,8 @@
 use jsonwebtoken::{encode, EncodingKey, Header, errors::Error as JwtError};
 use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
+use dotenv::dotenv;
+use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -24,7 +26,11 @@ impl Claims {
 
 pub fn create_token(user_id: i64) -> Result<String, JwtError> {
     let claims = Claims::new(user_id);
-    // In production, use a proper secret key from environment variables
-    let secret = b"your_secret_key";
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(secret))
+
+    // Load .env file
+    dotenv().ok();
+
+    let secret = env::var("SECRET_KEY").expect("SECRET_KEY must be set");
+
+    encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()))
 } 
