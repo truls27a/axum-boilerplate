@@ -12,6 +12,7 @@ mod db;
 mod api;
 mod models;
 mod utils;
+mod services;
 #[cfg(test)]
 mod tests;
 

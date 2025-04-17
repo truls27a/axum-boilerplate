@@ -4,17 +4,16 @@ use axum::{
     extract::State,
 };
 use serde::{Deserialize, Serialize};
-use bcrypt::{verify};
 use sqlx::SqlitePool;
 
-use crate::models::user::User;
-use crate::utils::jwt;
+use crate::services::auth_service::{AuthService, AuthError};
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
     email: String,
     password: String,
 }
+
 #[derive(Deserialize)]
 pub struct RegisterRequest {
     username: String,
@@ -36,23 +35,15 @@ pub async fn login(
     State(pool): State<SqlitePool>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, StatusCode> {
-    // Find user by username
-    let user = User::find_by_email(&pool, &payload.email)
+    let auth_service = AuthService::new(pool);
+    
+    let token = auth_service
+        .login(&payload.email, &payload.password)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    // Verify password
-    let password_matches = verify(&payload.password, &user.password_hash)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    if !password_matches {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    // Generate JWT token
-    let token = jwt::create_token(user.id)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| match e {
+            AuthError::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
 
     Ok(Json(LoginResponse { token }))
 }
@@ -61,10 +52,12 @@ pub async fn register(
     State(pool): State<SqlitePool>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, StatusCode> {
-    // Create user
-    let user = User::create(&pool, &payload.username, &payload.password, &payload.email)
+    let auth_service = AuthService::new(pool);
+    
+    let id = auth_service
+        .register(&payload.username, &payload.password, &payload.email)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(RegisterResponse { id: user.id }))
+    Ok(Json(RegisterResponse { id }))
 }
