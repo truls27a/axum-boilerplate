@@ -9,6 +9,7 @@ use tower_http::cors::{Any, CorsLayer};
 use sqlx::SqlitePool;
 
 mod db;
+mod api;
 
 #[derive(Serialize)]
 struct Message {
@@ -39,6 +40,7 @@ async fn main() {
     // build our application with routes
     let app = Router::new()
         .route("/", get(hello_world))
+        .route("/login", post(api::auth::login))
         .layer(cors)
         .with_state(pool);
 
