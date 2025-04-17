@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use sqlx::SqlitePool;
+use tracing::{info, warn, error, Level};
 
 mod db;
 mod api;
@@ -64,21 +65,64 @@ pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing
-    tracing_subscriber::fmt::init();
+    // Initialize structured logging with timestamp and log level
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_thread_ids(true)
+        .with_level(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_names(true)
+        .with_max_level(Level::INFO)
+        .init();
+
+    info!("Starting Axum API server...");
 
     // Initialize database
-    let pool = db::create_db_pool().await;
+    info!("Initializing database connection...");
+    let pool = match db::create_db_pool().await {
+        Ok(pool) => {
+            info!("Successfully connected to database");
+            pool
+        },
+        Err(e) => {
+            error!("Failed to connect to database: {}", e);
+            std::process::exit(1);
+        }
+    };
     
     // Initialize Redis
-    let redis_store = db::create_redis_store();
+    info!("Initializing Redis connection...");
+    let redis_store = match db::create_redis_store() {
+        Ok(store) => {
+            info!("Successfully connected to Redis");
+            store
+        },
+        Err(e) => {
+            error!("Failed to connect to Redis: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // Create the router
+    info!("Configuring API routes...");
     let app = create_router(pool, redis_store);
 
     // run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    tracing::info!("listening on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    info!("🚀 Server starting on http://{}", addr);
+    
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => {
+            info!("Successfully bound to port 3000");
+            if let Err(e) = axum::serve(listener, app).await {
+                error!("Server error: {}", e);
+                std::process::exit(1);
+            }
+        },
+        Err(e) => {
+            error!("Failed to bind to port 3000: {}", e);
+            std::process::exit(1);
+        }
+    }
 }

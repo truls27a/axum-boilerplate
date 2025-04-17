@@ -1,5 +1,6 @@
 use sqlx::SqlitePool;
 use bcrypt::verify;
+use tracing::{info, warn, error, instrument};
 
 use crate::models::user::User;
 use crate::utils::jwt;
@@ -36,53 +37,103 @@ impl AuthService {
         Self { pool }
     }
 
+    #[instrument(skip(self, password, redis_store))]
     pub async fn login(&self, email: &str, password: &str, redis_store: &RedisStore) -> Result<String, AuthError> {
+        info!(email = %email, "Login attempt");
+        
         // Find user by email
-        let user = User::find_by_email(&self.pool, email)
-            .await
-            .map_err(AuthError::from)?
-            .ok_or(AuthError::InvalidCredentials)?;
+        let user = match User::find_by_email(&self.pool, email).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                warn!(email = %email, "Login attempt with non-existent email");
+                return Err(AuthError::InvalidCredentials);
+            }
+            Err(e) => {
+                error!(error = %e, "Database error during login");
+                return Err(AuthError::DatabaseError(e));
+            }
+        };
 
         // Verify password
-        let password_matches = verify(password, &user.password_hash)
-            .map_err(|_| AuthError::PasswordHashError)?;
+        let password_matches = match verify(password, &user.password_hash) {
+            Ok(matches) => matches,
+            Err(e) => {
+                error!(error = %e, "Password verification error");
+                return Err(AuthError::PasswordHashError);
+            }
+        };
 
         if !password_matches {
+            warn!(email = %email, "Failed login attempt - invalid password");
             return Err(AuthError::InvalidCredentials);
         }
 
         // Generate JWT token
-        let token = jwt::create_token(user.id, redis_store)
-            .await
-            .map_err(|_| AuthError::TokenError)?;
-
-        Ok(token)
+        match jwt::create_token(user.id, redis_store).await {
+            Ok(token) => {
+                info!(user_id = %user.id, email = %email, "User successfully logged in");
+                Ok(token)
+            }
+            Err(e) => {
+                error!(error = %e, "Token generation error");
+                Err(AuthError::TokenError)
+            }
+        }
     }
 
+    #[instrument(skip(self, password))]
     pub async fn register(
         &self,
         username: &str,
         password: &str,
         email: &str,
     ) -> Result<i64, AuthError> {
-        let user = User::create(&self.pool, username, password, email)
-            .await
-            .map_err(AuthError::from)?;
+        info!(username = %username, email = %email, "New user registration attempt");
 
-        Ok(user.id)
+        // Check if user already exists
+        if let Ok(Some(_)) = User::find_by_email(&self.pool, email).await {
+            warn!(email = %email, "Registration attempt with existing email");
+            return Err(AuthError::InvalidCredentials);
+        }
+
+        match User::create(&self.pool, username, password, email).await {
+            Ok(user) => {
+                info!(
+                    user_id = %user.id,
+                    username = %username,
+                    email = %email,
+                    "New user successfully registered"
+                );
+                Ok(user.id)
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to create new user");
+                Err(AuthError::DatabaseError(e))
+            }
+        }
     }
 
+    #[instrument(skip(self, redis_store))]
     pub async fn verify_token(&self, token: &str, redis_store: &RedisStore) -> Result<User, AuthError> {
         // Decode and verify the token
-        let claims = jwt::decode_token(token, redis_store)
-            .await
-            .map_err(|_| AuthError::TokenError)?;
+        let claims = match jwt::decode_token(token, redis_store).await {
+            Ok(claims) => claims,
+            Err(e) => {
+                warn!(error = %e, "Invalid token verification attempt");
+                return Err(AuthError::TokenError);
+            }
+        };
         
         // Find user by ID
-        let user = User::find_by_id(&self.pool, claims.sub)
-            .await?
-            .ok_or(AuthError::UserNotFound)?;
-
-        Ok(user)
+        match User::find_by_id(&self.pool, claims.sub).await? {
+            Some(user) => {
+                info!(user_id = %user.id, "Token successfully verified");
+                Ok(user)
+            }
+            None => {
+                warn!(user_id = %claims.sub, "Token verification failed - user not found");
+                Err(AuthError::UserNotFound)
+            }
+        }
     }
 } 
