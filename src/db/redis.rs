@@ -1,5 +1,7 @@
 use dotenv::dotenv;
-use redis::{aio::ConnectionManager, AsyncCommands, Client, RedisError};
+use redis::{Client, RedisError};
+use redis::aio::{ConnectionManager, ConnectionLike};
+use redis::AsyncCommands;
 use std::env;
 use std::time::Duration;
 use tracing::{error, info, instrument};
