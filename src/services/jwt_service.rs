@@ -44,7 +44,7 @@ impl JwtService {
         let refresh_token = self.create_jwt(&refresh_claims)?;
 
         // put refresh JTI into allow-list
-        let ttl = (refresh_claims.exp - refresh_claims.iat) as usize;
+        let ttl = (refresh_claims.exp - refresh_claims.iat) as u64;
         if let Err(e) = self
             .redis_store
             .add_to_allowlist(&refresh_jti, user_id, ttl)
@@ -115,7 +115,7 @@ impl JwtService {
     pub async fn revoke_token(&self, token: &str) -> Result<(), JwtError> {
         let claims = self.decode_jwt::<RefreshClaims>(token)?;
 
-        let ttl = (claims.exp - Utc::now().timestamp()) as usize;
+        let ttl = (claims.exp - Utc::now().timestamp()) as u64;
         self.redis_store
             .blacklist_token(token, ttl)
             .await

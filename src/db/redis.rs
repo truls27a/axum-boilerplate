@@ -35,7 +35,7 @@ impl RedisStore {
         &self,
         jti: &str,
         user_id: i64,
-        ttl_secs: usize,
+        ttl_secs: u64,
     ) -> Result<(), RedisError> {
         let key = format!("{}{}", Self::ALLOWLIST_PREFIX, jti);
         let mut con = self.conn().await?;
@@ -56,7 +56,7 @@ impl RedisStore {
 
     /* ----------  BLACKLIST  (for access OR refresh) ---------- */
 
-    pub async fn blacklist_token(&self, token: &str, ttl_secs: usize) -> Result<(), RedisError> {
+    pub async fn blacklist_token(&self, token: &str, ttl_secs: u64) -> Result<(), RedisError> {
         let key = format!("{}{}", Self::BLACKLIST_PREFIX, token);
         let mut con = self.conn().await?;
         con.set_ex::<_, _, ()>(key, 1u8, ttl_secs).await
