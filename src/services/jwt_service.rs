@@ -110,13 +110,13 @@ impl JwtService {
         self.create_tokens(claims.sub).await
     }
 
-    /// Revoke a token (access *or* refresh) immediately.
-    pub async fn revoke_token(&self, token: &str) -> Result<(), JwtError> {
-        let claims = self.decode_jwt::<RefreshClaims>(token)?;
+    /// Revoke refresh token immediately.
+    pub async fn revoke_token(&self, refresh_token: &str) -> Result<(), JwtError> {
+        let claims = self.decode_jwt::<RefreshClaims>(refresh_token)?;
 
         let ttl = (claims.exp - Utc::now().timestamp()) as u64;
         self.redis_store
-            .blacklist_token(token, ttl)
+            .blacklist_token(refresh_token, ttl)
             .await
             .map_err(|e| {
                 error!(error = %e, "Failed to blacklist token");
