@@ -111,7 +111,6 @@ impl JwtService {
     }
 
     /// Revoke a token (access *or* refresh) immediately.
-    #[instrument(skip(self))]
     pub async fn revoke_token(&self, token: &str) -> Result<(), JwtError> {
         let claims = self.decode_jwt::<RefreshClaims>(token)?;
 
