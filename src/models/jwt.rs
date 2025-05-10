@@ -1,20 +1,22 @@
+// src/models/jwt.rs
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
-use chrono::{Utc, Duration};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccessClaims {
-    pub sub: i64, // user id
-    pub exp: i64, // expiration time
-    pub iat: i64, // issued at
-    pub token_type: String, // token type (access)
+    pub sub: i64,          // user id
+    pub exp: i64,          // expiration time
+    pub iat: i64,          // issued at
+    pub token_type: String // "access"
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RefreshClaims {
-    pub sub: i64, // user id
-    pub exp: i64, // expiration time
-    pub iat: i64, // issued at
-    pub token_type: String, // token type (refresh)
+    pub sub: i64,          // user id
+    pub exp: i64,          // expiration time
+    pub iat: i64,          // issued at
+    pub jti: String,       // unique id for allow/deny list
+    pub token_type: String // "refresh"
 }
 
 #[derive(Debug, Serialize)]
@@ -26,8 +28,8 @@ pub struct TokenPair {
 impl AccessClaims {
     pub fn new(user_id: i64) -> Self {
         let now = Utc::now();
-        let expires_at = now + Duration::minutes(15); // Access tokens expire in 15 minutes
-        
+        let expires_at = now + Duration::minutes(15);
+
         Self {
             sub: user_id,
             exp: expires_at.timestamp(),
@@ -38,15 +40,16 @@ impl AccessClaims {
 }
 
 impl RefreshClaims {
-    pub fn new(user_id: i64) -> Self {
+    pub fn new(user_id: i64, jti: String) -> Self {
         let now = Utc::now();
-        let expires_at = now + Duration::days(7); // Refresh tokens expire in 7 days
-        
+        let expires_at = now + Duration::days(7);
+
         Self {
             sub: user_id,
             exp: expires_at.timestamp(),
             iat: now.timestamp(),
+            jti,
             token_type: "refresh".to_string(),
         }
     }
-} 
+}

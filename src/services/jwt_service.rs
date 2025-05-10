@@ -1,49 +1,57 @@
-use jsonwebtoken::{encode, decode, EncodingKey, DecodingKey, Header, Validation, errors::Error as JwtError};
-use serde::{Deserialize, Serialize};
-use chrono::{Utc, Duration};
-use std::env;
-
+// src/services/jwt_service.rs
 use crate::db::RedisStore;
 use crate::models::jwt::{AccessClaims, RefreshClaims, TokenPair};
+
+use chrono::Utc;
+use jsonwebtoken::{
+    decode, encode, errors::Error as JwtError, Algorithm, DecodingKey, EncodingKey, Header,
+    Validation,
+};
+use tracing::{error, info, instrument};
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct JwtService {
     redis_store: RedisStore,
     secret_key: String,
+    enc_key: EncodingKey,
+    dec_key: DecodingKey<'static>,
 }
 
 impl JwtService {
     pub fn new(redis_store: RedisStore, secret_key: String) -> Self {
+        let enc_key = EncodingKey::from_secret(secret_key.as_bytes());
+        let dec_key = DecodingKey::from_secret(secret_key.as_bytes()).into_static();
+
         Self {
             redis_store,
             secret_key,
+            enc_key,
+            dec_key,
         }
     }
 
-    pub async fn create_token_pair(&self, user_id: i64) -> Result<TokenPair, JwtError> {
-        let access_claims = AccessClaims::new(user_id);
-        let refresh_claims = RefreshClaims::new(user_id);
+    /* ---------- PUBLIC API ---------- */
 
-        let access_token = encode(
-            &Header::default(),
-            &access_claims,
-            &EncodingKey::from_secret(self.secret_key.as_bytes())
-        )?;
+    /// Generate and allow-list a fresh token pair.
+    #[instrument(skip(self))]
+    pub async fn create_tokens(&self, user_id: i64) -> Result<TokenPair, JwtError> {
+        // Generate a unique ID for the refresh token
+        let refresh_jti = Uuid::new_v4().to_string();
 
-        let refresh_token = encode(
-            &Header::default(),
-            &refresh_claims,
-            &EncodingKey::from_secret(self.secret_key.as_bytes())
-        )?;
+        let access_token = self.create_jwt(&AccessClaims::new(user_id))?;
+        let refresh_claims = RefreshClaims::new(user_id, refresh_jti.clone());
+        let refresh_token = self.create_jwt(&refresh_claims)?;
 
-        // Store both tokens in Redis
-        self.redis_store.store_token(user_id, &access_token, access_claims.exp)
+        // put refresh JTI into allow-list
+        let ttl = (refresh_claims.exp - refresh_claims.iat) as usize;
+        if let Err(e) = self
+            .redis_store
+            .add_to_allowlist(&refresh_jti, user_id, ttl)
             .await
-            .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
-
-        self.redis_store.store_refresh_token(user_id, &refresh_token, refresh_claims.exp)
-            .await
-            .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
+        {
+            error!(error = %e, "Failed to allow-list refresh token");
+        }
 
         Ok(TokenPair {
             access_token,
@@ -51,80 +59,82 @@ impl JwtService {
         })
     }
 
-    pub async fn decode_access_token(&self, token: &str) -> Result<AccessClaims, JwtError> {
-        // First validate token in Redis
-        let user_id = self.redis_store.validate_token(token)
-            .await
-            .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?
-            .ok_or_else(|| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
-        
-        // Then decode JWT
-        let token_data = decode::<AccessClaims>(
-            token,
-            &DecodingKey::from_secret(self.secret_key.as_bytes()),
-            &Validation::default()
-        )?;
-        
-        // Verify the user_id matches and it's an access token
-        if token_data.claims.sub != user_id || token_data.claims.token_type != "access" {
-            return Err(JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken));
+    /// Validate an access token and return its claims.
+    /// Fails if expired or black-listed.
+    #[instrument(skip(self))]
+    pub async fn verify_access_token(&self, token: &str) -> Result<AccessClaims, JwtError> {
+        if self.redis_store.is_blacklisted(token).await.unwrap_or(false) {
+            return Err(JwtError::ExpiredSignature);
         }
-        
-        Ok(token_data.claims)
+        let data = self.decode_jwt::<AccessClaims>(token)?;
+
+        Ok(data)
     }
 
-    pub async fn decode_refresh_token(&self, token: &str) -> Result<RefreshClaims, JwtError> {
-        // First validate refresh token in Redis
-        let user_id = self.redis_store.validate_refresh_token(token)
+    /// Exchange a valid refresh token for a brand-new pair.
+    ///  1. Must still be allow-listed
+    ///  2. Not black-listed / expired
+    ///  3. Old refresh token is revoked
+    #[instrument(skip(self))]
+    pub async fn refresh_tokens(&self, refresh_token: &str) -> Result<TokenPair, JwtError> {
+        if self
+            .redis_store
+            .is_blacklisted(refresh_token)
             .await
-            .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?
-            .ok_or_else(|| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
-        
-        // Then decode JWT
-        let token_data = decode::<RefreshClaims>(
-            token,
-            &DecodingKey::from_secret(self.secret_key.as_bytes()),
-            &Validation::default()
-        )?;
-        
-        // Verify the user_id matches and it's a refresh token
-        if token_data.claims.sub != user_id || token_data.claims.token_type != "refresh" {
-            return Err(JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken));
+            .unwrap_or(false)
+        {
+            return Err(JwtError::InvalidToken);
         }
-        
-        Ok(token_data.claims)
+
+        let claims = self.decode_jwt::<RefreshClaims>(refresh_token)?;
+
+        // ensure still allow-listed
+        if !self
+            .redis_store
+            .is_allowlisted(&claims.jti)
+            .await
+            .unwrap_or(false)
+        {
+            return Err(JwtError::InvalidToken);
+        }
+
+        // everything checks out ⇒ revoke old refresh & build new pair
+        self.revoke_token(refresh_token, claims.exp - Utc::now().timestamp())
+            .await;
+
+        self.redis_store
+            .remove_from_allowlist(&claims.jti)
+            .await
+            .ok();
+
+        self.create_tokens(claims.sub).await
     }
 
-    pub async fn refresh_access_token(&self, refresh_token: &str) -> Result<String, JwtError> {
-        // Decode and validate the refresh token
-        let claims = self.decode_refresh_token(refresh_token).await?;
-        
-        // Create new access token
-        let access_claims = AccessClaims::new(claims.sub);
-        
-        let new_access_token = encode(
-            &Header::default(),
-            &access_claims,
-            &EncodingKey::from_secret(self.secret_key.as_bytes())
-        )?;
-
-        // Store new access token in Redis
-        self.redis_store.store_token(claims.sub, &new_access_token, access_claims.exp)
+    /// Revoke a token (access *or* refresh) immediately.
+    #[instrument(skip(self))]
+    pub async fn revoke_token(&self, token: &str, ttl_seconds: i64) {
+        if ttl_seconds <= 0 {
+            return;
+        }
+        if let Err(e) = self
+            .redis_store
+            .blacklist_token(token, ttl_seconds as usize)
             .await
-            .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
-
-        Ok(new_access_token)
+        {
+            error!(error = %e, "Failed to blacklist token");
+        }
     }
 
-    pub async fn invalidate_tokens(&self, access_token: &str, refresh_token: &str) -> Result<(), JwtError> {
-        self.redis_store.invalidate_token(access_token)
-            .await
-            .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
-        
-        self.redis_store.invalidate_refresh_token(refresh_token)
-            .await
-            .map_err(|_| JwtError::from(jsonwebtoken::errors::ErrorKind::InvalidToken))?;
-        
-        Ok(())
+    /* ---------- PRIVATE HELPERS ---------- */
+
+    fn create_jwt<T: serde::Serialize>(&self, claims: &T) -> Result<String, JwtError> {
+        encode(&Header::default(), claims, &self.enc_key)
     }
-} 
+
+    fn decode_jwt<T: serde::de::DeserializeOwned>(&self, token: &str) -> Result<T, JwtError> {
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.validate_exp = true;
+
+        decode::<T>(token, &self.dec_key, &validation).map(|data| data.claims)
+    }
+}
