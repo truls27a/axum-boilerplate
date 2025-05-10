@@ -26,17 +26,27 @@ pub struct RegisterRequest {
 
 #[derive(Serialize)]
 pub struct RegisterResponse {
+    message: String,
+    success: bool,
     id: i64,
 }
 
 #[derive(Serialize)]
 pub struct LoginResponse {
     message: String,
+    success: bool,
 }
 
 #[derive(Serialize)]
 pub struct RefreshTokenResponse {
     message: String,
+    success: bool,
+}
+
+#[derive(Serialize)]
+pub struct LogoutResponse {
+    message: String,
+    success: bool,
 }
 
 pub async fn login(
@@ -65,6 +75,7 @@ pub async fn login(
 
     Ok((headers, Json(LoginResponse { 
         message: "Login successful".to_string(),
+        success: true,
     })))
 }
 
@@ -83,7 +94,11 @@ pub async fn register(
         })?;
 
     info!("Successfully registered new user with id: {}", id);
-    Ok(Json(RegisterResponse { id }))
+    Ok(Json(RegisterResponse { 
+        message: "Registration successful".to_string(),
+        success: true,
+        id,
+    }))
 }
 
 pub async fn refresh_token(
@@ -118,13 +133,14 @@ pub async fn refresh_token(
 
     Ok((headers, Json(RefreshTokenResponse { 
         message: "Tokens refreshed successfully".to_string(),
+        success: true,
     })))
 }
 
 pub async fn logout(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<HeaderMap, StatusCode> {
+) -> Result<(HeaderMap, Json<LogoutResponse>), StatusCode> {
     debug!("Logout attempt");
 
     let refresh_token = CookieService::extract_token(&headers, REFRESH_TOKEN_COOKIE)
@@ -146,5 +162,8 @@ pub async fn logout(
     let headers = CookieService::clear_auth_cookies();
     info!("User successfully logged out");
     
-    Ok(headers)
+    Ok((headers, Json(LogoutResponse { 
+        message: "Logout successful".to_string(),
+        success: true,
+    })))
 }

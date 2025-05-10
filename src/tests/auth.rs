@@ -81,7 +81,7 @@ async fn test_login_success() {
     
     // Parse response and verify message
     let response: Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(response["message"], "Login successful");
+    assert_eq!(response["success"], true);
     
     // Extract tokens from Set-Cookie headers
     let access_token = extract_response_cookie(&headers, ACCESS_TOKEN_COOKIE);
@@ -163,7 +163,7 @@ async fn test_refresh_token_success() {
 
     assert_eq!(status, StatusCode::OK);
     let response: Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(response["message"], "Tokens refreshed successfully");
+    assert_eq!(response["success"], true);
 
     // Verify new cookies are present
     let new_access_token = extract_response_cookie(&headers, ACCESS_TOKEN_COOKIE);

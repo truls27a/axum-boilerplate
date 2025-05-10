@@ -96,7 +96,7 @@ async fn main() {
         .with_file(true)
         .with_line_number(true)
         .with_thread_names(true)
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::DEBUG)
         .init();
 
     info!("Starting Axum API server...");
