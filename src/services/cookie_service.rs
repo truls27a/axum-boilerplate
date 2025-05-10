@@ -1,6 +1,6 @@
 use axum::http::{HeaderMap, HeaderValue};
 use time::{Duration, OffsetDateTime};
-use tower_cookies::{Cookie, Cookies};
+use tower_cookies::Cookie;
 use cookie::SameSite;
 use tracing::debug;
 

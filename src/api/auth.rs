@@ -6,11 +6,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tracing::{info, error, debug};
 
-use crate::services::auth_service::{AuthError};
+use crate::services::auth_service::AuthError;
 use crate::AppState;
-use jsonwebtoken::{
-    errors::Error as JwtError, errors::ErrorKind
-};
+use jsonwebtoken::errors::ErrorKind;
 use crate::services::cookie_service::{CookieService, REFRESH_TOKEN_COOKIE};
 
 #[derive(Deserialize)]

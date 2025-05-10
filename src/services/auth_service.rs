@@ -5,7 +5,6 @@ use tracing::{info, warn, error, instrument};
 use crate::models::user::User;
 use crate::models::jwt::TokenPair;
 use crate::services::jwt_service::JwtService;
-use crate::db::RedisStore;
 
 #[derive(Clone)]
 pub struct AuthService {

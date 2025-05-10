@@ -1,10 +1,9 @@
 use dotenv::dotenv;
 use redis::{Client, RedisError};
-use redis::aio::{ConnectionManager, ConnectionLike};
+use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use std::env;
-use std::time::Duration;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
 #[derive(Clone)]
 pub struct RedisStore {

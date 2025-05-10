@@ -1,22 +1,19 @@
 use axum::{
     routing::{get, post},
     Json, Router,
-    extract::State,
     middleware::from_fn_with_state,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::net::SocketAddr;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use http::{
     Method, 
     HeaderValue, 
-    HeaderName,
     header::{AUTHORIZATION, ACCEPT, CONTENT_TYPE},
 };
 use sqlx::SqlitePool;
-use tracing::{info, warn, error, Level};
+use tracing::{info, error, Level};
 use std::time::Duration;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod db;
 mod api;
@@ -27,7 +24,6 @@ mod middleware;
 mod tests;
 
 use services::jwt_service::JwtService;
-use services::cookie_service::CookieService;
 use services::auth_service::AuthService;
 
 #[derive(Clone)]

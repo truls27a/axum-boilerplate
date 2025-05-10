@@ -1,14 +1,9 @@
 #[cfg(test)]
-use axum::{
-    http::{Request, StatusCode, HeaderMap},
-    body::Body,
-};
+use axum::http::StatusCode;
 use serde_json::{json, Value};
 use super::helpers::{setup_test_db, create_test_app, test_request, extract_response_cookie};
-use tower::ServiceExt;
-use crate::services::cookie_service::{CookieService, ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE};
-use tracing::{info, debug};
-use tower_cookies::Cookie;
+use crate::services::cookie_service::{ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE};
+use tracing::{debug};
 
 #[tokio::test]
 async fn test_register_success() {
@@ -358,14 +353,9 @@ async fn test_get_current_user() {
     ).await;
 
     // Extract tokens from cookies
-    let cookies: Vec<_> = headers.get_all("set-cookie")
-        .iter()
-        .filter_map(|c| c.to_str().ok())
-        .map(|c| {
-            let cookie = Cookie::parse(c).unwrap();
-            (cookie.name().to_string(), cookie.value().to_string())
-        })
-        .collect();
+    let access_token = extract_response_cookie(&headers, ACCESS_TOKEN_COOKIE).unwrap();
+    let refresh_token = extract_response_cookie(&headers, REFRESH_TOKEN_COOKIE).unwrap();
+    let cookies = vec![(ACCESS_TOKEN_COOKIE, access_token.as_str()), (REFRESH_TOKEN_COOKIE, refresh_token.as_str())];
 
     // Test /me endpoint with cookies
     let (status, body, _) = test_request(
@@ -374,7 +364,7 @@ async fn test_get_current_user() {
         "/me",
         None,
         None,
-        Some(&cookies.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect::<Vec<_>>()),
+        Some(&cookies),
     ).await;
 
     let user_response: Value = serde_json::from_str(&body).unwrap();

@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use dotenv::dotenv;
 use std::env;

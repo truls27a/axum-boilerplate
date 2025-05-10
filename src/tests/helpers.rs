@@ -2,7 +2,6 @@ use crate::db::RedisStore;
 use axum::{
     Router,
     body::Body,
-    extract::State,
     http::{HeaderMap, Request, StatusCode},
 };
 use serde_json::Value;

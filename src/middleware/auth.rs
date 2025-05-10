@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     body::Body,
     extract::State,
     http::{Request, StatusCode},
@@ -11,10 +10,7 @@ use tracing::{info, warn, error, debug};
 use crate::{
     AppState,
     models::user::User,
-    services::{
-        auth_service::AuthService,
-        cookie_service::{ACCESS_TOKEN_COOKIE, CookieService},
-    },
+    services::cookie_service::{ACCESS_TOKEN_COOKIE, CookieService},
 };
 
 #[derive(Clone)]

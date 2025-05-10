@@ -7,13 +7,12 @@ use jsonwebtoken::{
     decode, encode, errors::Error as JwtError, errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header,
     Validation,
 };
-use tracing::{error, info, instrument};
+use tracing::{error, instrument};
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct JwtService {
     redis_store: RedisStore,
-    secret_key: String,
     enc_key: EncodingKey,
     dec_key: DecodingKey,
 }
@@ -25,7 +24,6 @@ impl JwtService {
 
         Self {
             redis_store,
-            secret_key,
             enc_key,
             dec_key,
         }
