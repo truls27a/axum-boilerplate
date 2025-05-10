@@ -119,28 +119,4 @@ impl AuthService {
         }
     }
 
-    #[instrument(skip(self))]
-    pub async fn verify_token(&self, token: &str) -> Result<User, AuthError> {
-        // Decode and verify the token
-        let claims = match self.jwt_service.verify_access_token(token).await {
-            Ok(claims) => claims,
-            Err(e) => {
-                warn!(error = %e, "Invalid token verification attempt");
-                return Err(AuthError::TokenError);
-            }
-        };
-        
-        // Find user by ID
-        match User::find_by_id(&self.pool, claims.sub).await? {
-            Some(user) => {
-                info!(user_id = %user.id, "Token successfully verified");
-                Ok(user)
-            }
-            None => {
-                warn!(user_id = %claims.sub, "Token verification failed - user not found");
-                Err(AuthError::UserNotFound)
-            }
-        }
-    }
-
 } 

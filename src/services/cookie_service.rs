@@ -3,8 +3,8 @@ use time::{Duration, OffsetDateTime};
 use tower_cookies::{Cookie, Cookies};
 use cookie::SameSite;
 
-const ACCESS_TOKEN_COOKIE: &str = "access_token";
-const REFRESH_TOKEN_COOKIE: &str = "refresh_token";
+pub const ACCESS_TOKEN_COOKIE: &str = "access_token";
+pub const REFRESH_TOKEN_COOKIE: &str = "refresh_token";
 const SECURE: bool = true; // Set to true for HTTPS
 const HTTP_ONLY: bool = true;
 const SAME_SITE: SameSite = SameSite::Strict;
@@ -64,7 +64,7 @@ impl CookieService {
         headers
     }
 
-    pub fn extract_refresh_token(headers: &HeaderMap) -> Option<String> {
+    pub fn extract_token(headers: &HeaderMap, token_name: &str) -> Option<String> {
         headers
             .get_all("cookie")
             .iter()
@@ -72,7 +72,7 @@ impl CookieService {
                 let cookie_str = cookie_header.to_str().ok()?;
                 Cookie::parse(cookie_str)
                     .ok()
-                    .filter(|c| c.name() == REFRESH_TOKEN_COOKIE)
+                    .filter(|c| c.name() == token_name)
                     .map(|c| c.value().to_string())
             })
     }

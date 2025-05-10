@@ -6,8 +6,7 @@ use axum::{
 use serde_json::{json, Value};
 use super::helpers::{setup_test_db, create_test_app, test_request};
 use tower::ServiceExt;
-use crate::utils::cookies::REFRESH_TOKEN_COOKIE;
-use crate::utils::cookies::CookieManager;
+use crate::services::cookie_service::{CookieService, ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE};
 
 #[tokio::test]
 async fn test_register_success() {
@@ -80,13 +79,21 @@ async fn test_login_success() {
 
     assert_eq!(status, StatusCode::OK);
     
-    // Parse response and verify tokens
+    // Parse response and verify message
     let response: Value = serde_json::from_str(&body).unwrap();
-    assert!(response.get("access_token").is_some());
+    assert_eq!(response["message"], "Login successful");
     
-    // Verify refresh token cookie
-    let refresh_token = CookieManager::extract_refresh_token(&headers);
-    assert!(refresh_token.is_some());
+    // Verify both cookies are present
+    let cookies: Vec<_> = headers.get_all("set-cookie").iter().collect();
+    assert_eq!(cookies.len(), 2);
+    
+    let cookies_str = cookies.iter()
+        .filter_map(|c| c.to_str().ok())
+        .collect::<Vec<_>>()
+        .join("; ");
+    
+    assert!(cookies_str.contains(ACCESS_TOKEN_COOKIE));
+    assert!(cookies_str.contains(REFRESH_TOKEN_COOKIE));
 }
 
 #[tokio::test]
@@ -126,17 +133,19 @@ async fn test_refresh_token_success() {
         None,
     ).await;
 
-    // Extract refresh token from login response
-    let refresh_token_cookie = login_headers.get("set-cookie")
-        .and_then(|v| v.to_str().ok())
-        .expect("Should have refresh token cookie");
+    // Extract refresh token cookie from login response
+    let cookies: Vec<_> = login_headers.get_all("set-cookie").iter().collect();
+    let cookies_str = cookies.iter()
+        .filter_map(|c| c.to_str().ok())
+        .collect::<Vec<_>>()
+        .join("; ");
 
     // Create headers for refresh request
     let mut refresh_headers = HeaderMap::new();
-    refresh_headers.insert("cookie", refresh_token_cookie.parse().unwrap());
+    refresh_headers.insert("cookie", cookies_str.parse().unwrap());
 
     // Test refresh token endpoint
-    let (status, body, _) = test_request(
+    let (status, body, headers) = test_request(
         app,
         "POST",
         "/refresh",
@@ -146,7 +155,11 @@ async fn test_refresh_token_success() {
 
     assert_eq!(status, StatusCode::OK);
     let response: Value = serde_json::from_str(&body).unwrap();
-    assert!(response.get("access_token").is_some());
+    assert_eq!(response["message"], "Tokens refreshed successfully");
+
+    // Verify new cookies are present
+    let new_cookies: Vec<_> = headers.get_all("set-cookie").iter().collect();
+    assert_eq!(new_cookies.len(), 2);
 }
 
 #[tokio::test]
@@ -206,14 +219,16 @@ async fn test_logout_success() {
         None,
     ).await;
 
-    // Extract refresh token from login response
-    let refresh_token_cookie = login_headers.get("set-cookie")
-        .and_then(|v| v.to_str().ok())
-        .expect("Should have refresh token cookie");
+    // Extract cookies from login response
+    let cookies: Vec<_> = login_headers.get_all("set-cookie").iter().collect();
+    let cookies_str = cookies.iter()
+        .filter_map(|c| c.to_str().ok())
+        .collect::<Vec<_>>()
+        .join("; ");
 
     // Create headers for logout request
     let mut logout_headers = HeaderMap::new();
-    logout_headers.insert("cookie", refresh_token_cookie.parse().unwrap());
+    logout_headers.insert("cookie", cookies_str.parse().unwrap());
 
     // Test logout endpoint
     let (status, _, headers) = test_request(
@@ -226,15 +241,21 @@ async fn test_logout_success() {
 
     assert_eq!(status, StatusCode::OK);
 
-    // Verify that the refresh token cookie is cleared
-    let cookie = headers.get("set-cookie")
-        .and_then(|v| v.to_str().ok())
-        .expect("Should have cookie header");
-    assert!(cookie.contains("Max-Age=0"));
+    // Verify that the cookies are cleared
+    let clear_cookies: Vec<_> = headers.get_all("set-cookie").iter().collect();
+    assert_eq!(clear_cookies.len(), 2);
+    
+    let clear_cookies_str = clear_cookies.iter()
+        .filter_map(|c| c.to_str().ok())
+        .collect::<Vec<_>>()
+        .join("; ");
+    
+    // Cookies should be expired
+    assert!(clear_cookies_str.contains("expires"));
 
     // Try to use the refresh token after logout
     let mut refresh_headers = HeaderMap::new();
-    refresh_headers.insert("cookie", refresh_token_cookie.parse().unwrap());
+    refresh_headers.insert("cookie", cookies_str.parse().unwrap());
 
     let (status, _, _) = test_request(
         app,
@@ -308,13 +329,13 @@ async fn test_get_current_user() {
         None,
     ).await;
 
-    // Login to get token
+    // Login to get cookies
     let login_data = json!({
         "email": email,
         "password": password,
     });
 
-    let (_, body, _) = test_request(
+    let (_, _, login_headers) = test_request(
         app.clone(),
         "POST",
         "/login",
@@ -322,23 +343,25 @@ async fn test_get_current_user() {
         None,
     ).await;
 
-    let login_response: Value = serde_json::from_str(&body).unwrap();
-    let token = login_response["access_token"].as_str().unwrap();
+    // Extract cookies from login response
+    let cookies: Vec<_> = login_headers.get_all("set-cookie").iter().collect();
+    let cookies_str = cookies.iter()
+        .filter_map(|c| c.to_str().ok())
+        .collect::<Vec<_>>()
+        .join("; ");
 
-    // Test /me endpoint with token
-    let request = Request::builder()
-        .method("GET")
-        .uri("/me")
-        .header("Authorization", format!("Bearer {}", token))
-        .body(Body::empty())
-        .unwrap();
+    // Test /me endpoint with cookies
+    let mut headers = HeaderMap::new();
+    headers.insert("cookie", cookies_str.parse().unwrap());
 
-    let response = app.oneshot(request).await.unwrap();
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    let (status, body, _) = test_request(
+        app,
+        "GET",
+        "/me",
+        None,
+        Some(headers),
+    ).await;
+
     let user_response: Value = serde_json::from_str(&body).unwrap();
 
     assert_eq!(status, StatusCode::OK);

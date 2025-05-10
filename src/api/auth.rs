@@ -10,7 +10,7 @@ use crate::AppState;
 use jsonwebtoken::{
     errors::Error as JwtError, errors::ErrorKind
 };
-use crate::services::cookie_service::CookieService;
+use crate::services::cookie_service::{CookieService, REFRESH_TOKEN_COOKIE};
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -77,7 +77,7 @@ pub async fn refresh_token(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<(HeaderMap, Json<RefreshTokenResponse>), StatusCode> {
-    let refresh_token = CookieService::extract_refresh_token(&headers)
+    let refresh_token = CookieService::extract_token(&headers, REFRESH_TOKEN_COOKIE)
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     
@@ -101,7 +101,7 @@ pub async fn logout(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<HeaderMap, StatusCode> {
-    let refresh_token = CookieService::extract_refresh_token(&headers)
+    let refresh_token = CookieService::extract_token(&headers, REFRESH_TOKEN_COOKIE)
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     
