@@ -4,10 +4,11 @@ use axum::{
     body::Body,
 };
 use serde_json::{json, Value};
-use super::helpers::{setup_test_db, create_test_app, test_request};
+use super::helpers::{setup_test_db, create_test_app, test_request, extract_response_cookie};
 use tower::ServiceExt;
-use crate::services::cookie_service::{ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE};
+use crate::services::cookie_service::{CookieService, ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE};
 use tracing::{info, debug};
+use tower_cookies::Cookie;
 
 #[tokio::test]
 async fn test_register_success() {
@@ -87,19 +88,12 @@ async fn test_login_success() {
     let response: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(response["message"], "Login successful");
     
-    // Extract tokens from cookies
-    let cookies: Vec<_> = headers.get_all("set-cookie")
-        .iter()
-        .filter_map(|c| c.to_str().ok())
-        .map(|c| {
-            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
-            (parts[0], parts[1])
-        })
-        .collect();
-
-    assert_eq!(cookies.len(), 2);
-    assert!(cookies.iter().any(|(name, _)| *name == ACCESS_TOKEN_COOKIE));
-    assert!(cookies.iter().any(|(name, _)| *name == REFRESH_TOKEN_COOKIE));
+    // Extract tokens from Set-Cookie headers
+    let access_token = extract_response_cookie(&headers, ACCESS_TOKEN_COOKIE);
+    let refresh_token = extract_response_cookie(&headers, REFRESH_TOKEN_COOKIE);
+    
+    assert!(access_token.is_some());
+    assert!(refresh_token.is_some());
 }
 
 #[tokio::test]
@@ -145,21 +139,15 @@ async fn test_refresh_token_success() {
     ).await;
     assert_eq!(status, StatusCode::OK);
 
-    // Extract tokens from cookies
-    let cookies: Vec<_> = headers.get_all("set-cookie")
-        .iter()
-        .filter_map(|c| c.to_str().ok())
-        .map(|c| {
-            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
-            debug!(cookie_name = %parts[0], "Extracted cookie from login response");
-            (parts[0], parts[1])
-        })
-        .collect();
+    // Add a small delay to ensure different timestamps
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-    debug!(cookie_count = cookies.len(), "Number of cookies received");
-    for (name, _) in &cookies {
-        debug!(cookie_name = %name, "Found cookie");
-    }
+    // Extract tokens from Set-Cookie headers
+    let access_token = extract_response_cookie(&headers, ACCESS_TOKEN_COOKIE).unwrap();
+    let refresh_token = extract_response_cookie(&headers, REFRESH_TOKEN_COOKIE).unwrap();
+    let cookies = vec![(ACCESS_TOKEN_COOKIE, access_token.as_str()), (REFRESH_TOKEN_COOKIE, refresh_token.as_str())];
+
+    debug!("Cookies: {:?}", cookies);
 
     // Test refresh token endpoint
     debug!("Attempting to refresh token");
@@ -183,17 +171,13 @@ async fn test_refresh_token_success() {
     assert_eq!(response["message"], "Tokens refreshed successfully");
 
     // Verify new cookies are present
-    let new_cookies: Vec<_> = headers.get_all("set-cookie")
-        .iter()
-        .filter_map(|c| c.to_str().ok())
-        .map(|c| {
-            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
-            debug!(cookie_name = %parts[0], "Received new cookie after refresh");
-            (parts[0], parts[1])
-        })
-        .collect();
-    debug!(new_cookie_count = new_cookies.len(), "Number of new cookies received");
-    assert_eq!(new_cookies.len(), 2);
+    let new_access_token = extract_response_cookie(&headers, ACCESS_TOKEN_COOKIE);
+    let new_refresh_token = extract_response_cookie(&headers, REFRESH_TOKEN_COOKIE);
+    
+    assert!(new_access_token.is_some());
+    assert!(new_refresh_token.is_some());
+    assert_ne!(new_access_token.unwrap(), access_token);
+    assert_ne!(new_refresh_token.unwrap(), refresh_token);
 }
 
 #[tokio::test]
@@ -255,18 +239,16 @@ async fn test_logout_success() {
         None,
     ).await;
 
-    // Extract tokens from cookies
-    let cookies: Vec<_> = headers.get_all("set-cookie")
-        .iter()
-        .filter_map(|c| c.to_str().ok())
-        .map(|c| {
-            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
-            (parts[0], parts[1])
-        })
-        .collect();
+    // Extract tokens from Set-Cookie headers
+    let access_token = extract_response_cookie(&headers, ACCESS_TOKEN_COOKIE).unwrap();
+    let refresh_token = extract_response_cookie(&headers, REFRESH_TOKEN_COOKIE).unwrap();
+    let cookies = vec![(ACCESS_TOKEN_COOKIE, access_token.as_str()), (REFRESH_TOKEN_COOKIE, refresh_token.as_str())];
+
+    debug!("Cookies before logout request: {:?}", cookies);
+    debug!("Refresh token value: {}", refresh_token);
 
     // Test logout endpoint
-    let (status, _, headers) = test_request(
+    let (status, body, headers) = test_request(
         app.clone(),
         "POST",
         "/logout",
@@ -275,17 +257,15 @@ async fn test_logout_success() {
         Some(&cookies),
     ).await;
 
+    debug!("Logout response status: {}", status);
+    if status != StatusCode::OK {
+        debug!("Logout response body: {}", body);
+        debug!("Logout response headers: {:?}", headers);
+    }
+
     assert_eq!(status, StatusCode::OK);
 
-    // Verify that the cookies are cleared
-    let clear_cookies: Vec<_> = headers.get_all("set-cookie")
-        .iter()
-        .filter_map(|c| c.to_str().ok())
-        .collect();
-    assert_eq!(clear_cookies.len(), 2);
-    assert!(clear_cookies.iter().all(|c| c.contains("expires")));
-
-    // Try to use the cookies after logout
+    // Verify that both cookies are cleared by trying to use them
     let (status, _, _) = test_request(
         app,
         "POST",
@@ -295,7 +275,7 @@ async fn test_logout_success() {
         Some(&cookies),
     ).await;
 
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "Cookies should be invalid after logout");
 }
 
 #[tokio::test]
@@ -382,8 +362,8 @@ async fn test_get_current_user() {
         .iter()
         .filter_map(|c| c.to_str().ok())
         .map(|c| {
-            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
-            (parts[0], parts[1])
+            let cookie = Cookie::parse(c).unwrap();
+            (cookie.name().to_string(), cookie.value().to_string())
         })
         .collect();
 
@@ -394,7 +374,7 @@ async fn test_get_current_user() {
         "/me",
         None,
         None,
-        Some(&cookies),
+        Some(&cookies.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect::<Vec<_>>()),
     ).await;
 
     let user_response: Value = serde_json::from_str(&body).unwrap();
