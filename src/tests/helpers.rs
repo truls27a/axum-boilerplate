@@ -1,16 +1,17 @@
+use crate::db::RedisStore;
 use axum::{
     Router,
     body::Body,
-    http::{Request, StatusCode, HeaderMap},
     extract::State,
+    http::{HeaderMap, Request, StatusCode},
 };
-use tower::ServiceExt;
 use serde_json::Value;
 use sqlx::SqlitePool;
-use crate::db::RedisStore;
-use tracing::{info, Level};
-use tracing_subscriber::fmt::format::FmtSpan;
 use std::sync::Once;
+use tower::ServiceExt;
+use tower_cookies::Cookie;
+use tracing::{Level, info, debug};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 static INIT: Once = Once::new();
 
@@ -25,7 +26,7 @@ pub fn init_tracing() {
             .with_file(true)
             .with_line_number(true)
             .with_thread_names(true)
-            .with_max_level(Level::ERROR)
+            .with_max_level(Level::DEBUG)
             .with_span_events(FmtSpan::NONE)
             .init();
     });
@@ -34,7 +35,7 @@ pub fn init_tracing() {
 pub async fn setup_test_db() -> SqlitePool {
     init_tracing();
     info!("Setting up test database");
-    
+
     // Create a new in-memory SQLite database for testing
     let pool = SqlitePool::connect("sqlite::memory:")
         .await
@@ -74,7 +75,7 @@ pub async fn test_request(
     cookies: Option<&[(&str, &str)]>,
 ) -> (StatusCode, String, HeaderMap) {
     info!(method = %method, uri = %uri, "Making test request");
-    
+
     let body = if let Some(json) = body {
         info!(body = %json, "Request body");
         Body::from(serde_json::to_string(&json).unwrap())
@@ -95,6 +96,7 @@ pub async fn test_request(
                 .map(|(name, value)| format!("{}={}", name, value))
                 .collect::<Vec<_>>()
                 .join("; ");
+            debug!("Setting cookie header: {}", cookie_header);
             request = request.header("cookie", cookie_header);
         }
     }
@@ -115,9 +117,27 @@ pub async fn test_request(
         axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap()
-            .to_vec()
-    ).unwrap();
+            .to_vec(),
+    )
+    .unwrap();
 
     info!(status = %status, body = %body, "Test response received");
     (status, body, headers)
-} 
+}
+
+/// Helper function to extract cookie values from Set-Cookie headers in test responses
+pub fn extract_response_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
+    headers
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|c| c.to_str().ok())
+        .find_map(|c| {
+            Cookie::parse(c).ok().and_then(|cookie| {
+                if cookie.name() == cookie_name {
+                    Some(cookie.value().to_string())
+                } else {
+                    None
+                }
+            })
+        })
+}
