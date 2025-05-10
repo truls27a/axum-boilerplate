@@ -6,7 +6,8 @@ use axum::{
 use serde_json::{json, Value};
 use super::helpers::{setup_test_db, create_test_app, test_request};
 use tower::ServiceExt;
-use crate::services::cookie_service::{CookieService, ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE};
+use crate::services::cookie_service::{ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE};
+use tracing::{info, debug};
 
 #[tokio::test]
 async fn test_register_success() {
@@ -28,6 +29,7 @@ async fn test_register_success() {
         "POST",
         "/register",
         Some(register_data),
+        None,
         None,
     ).await;
 
@@ -59,6 +61,7 @@ async fn test_login_success() {
         "/register",
         Some(register_data),
         None,
+        None,
     ).await;
 
     assert_eq!(status, StatusCode::OK);
@@ -75,6 +78,7 @@ async fn test_login_success() {
         "/login",
         Some(login_data),
         None,
+        None,
     ).await;
 
     assert_eq!(status, StatusCode::OK);
@@ -83,17 +87,19 @@ async fn test_login_success() {
     let response: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(response["message"], "Login successful");
     
-    // Verify both cookies are present
-    let cookies: Vec<_> = headers.get_all("set-cookie").iter().collect();
-    assert_eq!(cookies.len(), 2);
-    
-    let cookies_str = cookies.iter()
+    // Extract tokens from cookies
+    let cookies: Vec<_> = headers.get_all("set-cookie")
+        .iter()
         .filter_map(|c| c.to_str().ok())
-        .collect::<Vec<_>>()
-        .join("; ");
-    
-    assert!(cookies_str.contains(ACCESS_TOKEN_COOKIE));
-    assert!(cookies_str.contains(REFRESH_TOKEN_COOKIE));
+        .map(|c| {
+            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
+            (parts[0], parts[1])
+        })
+        .collect();
+
+    assert_eq!(cookies.len(), 2);
+    assert!(cookies.iter().any(|(name, _)| *name == ACCESS_TOKEN_COOKIE));
+    assert!(cookies.iter().any(|(name, _)| *name == REFRESH_TOKEN_COOKIE));
 }
 
 #[tokio::test]
@@ -112,53 +118,81 @@ async fn test_refresh_token_success() {
         "password": password
     });
 
-    let (_, _, _) = test_request(
+    debug!("Registering test user");
+    let (status, _, _) = test_request(
         app.clone(),
         "POST",
         "/register",
         Some(register_data),
         None,
+        None,
     ).await;
+    assert_eq!(status, StatusCode::OK);
 
     let login_data = json!({
         "email": email,
         "password": password,
     });
 
-    let (_, _, login_headers) = test_request(
+    debug!("Logging in test user");
+    let (status, _, headers) = test_request(
         app.clone(),
         "POST",
         "/login",
         Some(login_data),
         None,
+        None,
     ).await;
+    assert_eq!(status, StatusCode::OK);
 
-    // Extract refresh token cookie from login response
-    let cookies: Vec<_> = login_headers.get_all("set-cookie").iter().collect();
-    let cookies_str = cookies.iter()
+    // Extract tokens from cookies
+    let cookies: Vec<_> = headers.get_all("set-cookie")
+        .iter()
         .filter_map(|c| c.to_str().ok())
-        .collect::<Vec<_>>()
-        .join("; ");
+        .map(|c| {
+            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
+            debug!(cookie_name = %parts[0], "Extracted cookie from login response");
+            (parts[0], parts[1])
+        })
+        .collect();
 
-    // Create headers for refresh request
-    let mut refresh_headers = HeaderMap::new();
-    refresh_headers.insert("cookie", cookies_str.parse().unwrap());
+    debug!(cookie_count = cookies.len(), "Number of cookies received");
+    for (name, _) in &cookies {
+        debug!(cookie_name = %name, "Found cookie");
+    }
 
     // Test refresh token endpoint
+    debug!("Attempting to refresh token");
     let (status, body, headers) = test_request(
         app,
         "POST",
         "/refresh",
         None,
-        Some(refresh_headers),
+        None,
+        Some(&cookies),
     ).await;
+
+    debug!(status = %status, "Refresh token response status");
+    if status != StatusCode::OK {
+        let body_str = String::from_utf8_lossy(body.as_bytes());
+        debug!(response_body = %body_str, "Error response body");
+    }
 
     assert_eq!(status, StatusCode::OK);
     let response: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(response["message"], "Tokens refreshed successfully");
 
     // Verify new cookies are present
-    let new_cookies: Vec<_> = headers.get_all("set-cookie").iter().collect();
+    let new_cookies: Vec<_> = headers.get_all("set-cookie")
+        .iter()
+        .filter_map(|c| c.to_str().ok())
+        .map(|c| {
+            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
+            debug!(cookie_name = %parts[0], "Received new cookie after refresh");
+            (parts[0], parts[1])
+        })
+        .collect();
+    debug!(new_cookie_count = new_cookies.len(), "Number of new cookies received");
     assert_eq!(new_cookies.len(), 2);
 }
 
@@ -168,15 +202,15 @@ async fn test_refresh_token_invalid() {
     let app = create_test_app(pool);
 
     // Try to refresh with invalid token
-    let mut headers = HeaderMap::new();
-    headers.insert("cookie", format!("{}=invalid_token", REFRESH_TOKEN_COOKIE).parse().unwrap());
+    let invalid_cookies = vec![(REFRESH_TOKEN_COOKIE, "invalid_token")];
 
     let (status, _, _) = test_request(
         app,
         "POST",
         "/refresh",
         None,
-        Some(headers),
+        None,
+        Some(&invalid_cookies),
     ).await;
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -204,6 +238,7 @@ async fn test_logout_success() {
         "/register",
         Some(register_data),
         None,
+        None,
     ).await;
 
     let login_data = json!({
@@ -211,24 +246,24 @@ async fn test_logout_success() {
         "password": password,
     });
 
-    let (_, _, login_headers) = test_request(
+    let (_, _, headers) = test_request(
         app.clone(),
         "POST",
         "/login",
         Some(login_data),
         None,
+        None,
     ).await;
 
-    // Extract cookies from login response
-    let cookies: Vec<_> = login_headers.get_all("set-cookie").iter().collect();
-    let cookies_str = cookies.iter()
+    // Extract tokens from cookies
+    let cookies: Vec<_> = headers.get_all("set-cookie")
+        .iter()
         .filter_map(|c| c.to_str().ok())
-        .collect::<Vec<_>>()
-        .join("; ");
-
-    // Create headers for logout request
-    let mut logout_headers = HeaderMap::new();
-    logout_headers.insert("cookie", cookies_str.parse().unwrap());
+        .map(|c| {
+            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
+            (parts[0], parts[1])
+        })
+        .collect();
 
     // Test logout endpoint
     let (status, _, headers) = test_request(
@@ -236,33 +271,28 @@ async fn test_logout_success() {
         "POST",
         "/logout",
         None,
-        Some(logout_headers),
+        None,
+        Some(&cookies),
     ).await;
 
     assert_eq!(status, StatusCode::OK);
 
     // Verify that the cookies are cleared
-    let clear_cookies: Vec<_> = headers.get_all("set-cookie").iter().collect();
-    assert_eq!(clear_cookies.len(), 2);
-    
-    let clear_cookies_str = clear_cookies.iter()
+    let clear_cookies: Vec<_> = headers.get_all("set-cookie")
+        .iter()
         .filter_map(|c| c.to_str().ok())
-        .collect::<Vec<_>>()
-        .join("; ");
-    
-    // Cookies should be expired
-    assert!(clear_cookies_str.contains("expires"));
+        .collect();
+    assert_eq!(clear_cookies.len(), 2);
+    assert!(clear_cookies.iter().all(|c| c.contains("expires")));
 
-    // Try to use the refresh token after logout
-    let mut refresh_headers = HeaderMap::new();
-    refresh_headers.insert("cookie", cookies_str.parse().unwrap());
-
+    // Try to use the cookies after logout
     let (status, _, _) = test_request(
         app,
         "POST",
         "/refresh",
         None,
-        Some(refresh_headers),
+        None,
+        Some(&cookies),
     ).await;
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -286,6 +316,7 @@ async fn test_login_invalid_password() {
         "/register",
         Some(register_data),
         None,
+        None,
     ).await;
 
     // Test login with wrong password
@@ -299,6 +330,7 @@ async fn test_login_invalid_password() {
         "POST",
         "/login",
         Some(login_data),
+        None,
         None,
     ).await;
 
@@ -327,6 +359,7 @@ async fn test_get_current_user() {
         "/register",
         Some(register_data),
         None,
+        None,
     ).await;
 
     // Login to get cookies
@@ -335,31 +368,33 @@ async fn test_get_current_user() {
         "password": password,
     });
 
-    let (_, _, login_headers) = test_request(
+    let (_, _, headers) = test_request(
         app.clone(),
         "POST",
         "/login",
         Some(login_data),
         None,
+        None,
     ).await;
 
-    // Extract cookies from login response
-    let cookies: Vec<_> = login_headers.get_all("set-cookie").iter().collect();
-    let cookies_str = cookies.iter()
+    // Extract tokens from cookies
+    let cookies: Vec<_> = headers.get_all("set-cookie")
+        .iter()
         .filter_map(|c| c.to_str().ok())
-        .collect::<Vec<_>>()
-        .join("; ");
+        .map(|c| {
+            let parts: Vec<_> = c.split(';').next().unwrap().split('=').collect();
+            (parts[0], parts[1])
+        })
+        .collect();
 
     // Test /me endpoint with cookies
-    let mut headers = HeaderMap::new();
-    headers.insert("cookie", cookies_str.parse().unwrap());
-
     let (status, body, _) = test_request(
         app,
         "GET",
         "/me",
         None,
-        Some(headers),
+        None,
+        Some(&cookies),
     ).await;
 
     let user_response: Value = serde_json::from_str(&body).unwrap();

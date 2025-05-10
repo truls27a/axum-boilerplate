@@ -31,11 +31,12 @@ impl CookieService {
             Duration::days(7), // 7 days for refresh token
         );
 
-        headers.insert(
+        // Each Set-Cookie header should be in its own header field
+        headers.append(
             "Set-Cookie",
             HeaderValue::from_str(&access_cookie.to_string()).unwrap(),
         );
-        headers.insert(
+        headers.append(
             "Set-Cookie",
             HeaderValue::from_str(&refresh_cookie.to_string()).unwrap(),
         );
@@ -52,11 +53,12 @@ impl CookieService {
         // Clear refresh token
         let refresh_cookie = Self::create_removal_cookie(REFRESH_TOKEN_COOKIE);
 
-        headers.insert(
+        // Each Set-Cookie header should be in its own header field
+        headers.append(
             "Set-Cookie",
             HeaderValue::from_str(&access_cookie.to_string()).unwrap(),
         );
-        headers.insert(
+        headers.append(
             "Set-Cookie",
             HeaderValue::from_str(&refresh_cookie.to_string()).unwrap(),
         );

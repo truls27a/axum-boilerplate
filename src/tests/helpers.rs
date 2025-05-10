@@ -25,8 +25,8 @@ pub fn init_tracing() {
             .with_file(true)
             .with_line_number(true)
             .with_thread_names(true)
-            .with_max_level(Level::INFO)
-            .with_span_events(FmtSpan::FULL)
+            .with_max_level(Level::ERROR)
+            .with_span_events(FmtSpan::NONE)
             .init();
     });
 }
@@ -71,6 +71,7 @@ pub async fn test_request(
     uri: &str,
     body: Option<Value>,
     headers: Option<HeaderMap>,
+    cookies: Option<&[(&str, &str)]>,
 ) -> (StatusCode, String, HeaderMap) {
     info!(method = %method, uri = %uri, "Making test request");
     
@@ -85,6 +86,18 @@ pub async fn test_request(
         .method(method)
         .uri(uri)
         .header("content-type", "application/json");
+
+    // Add cookies if provided
+    if let Some(cookies) = cookies {
+        if !cookies.is_empty() {
+            let cookie_header = cookies
+                .iter()
+                .map(|(name, value)| format!("{}={}", name, value))
+                .collect::<Vec<_>>()
+                .join("; ");
+            request = request.header("cookie", cookie_header);
+        }
+    }
 
     // Add custom headers if provided
     if let Some(custom_headers) = headers {
