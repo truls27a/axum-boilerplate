@@ -143,17 +143,4 @@ impl AuthService {
         }
     }
 
-    #[instrument(skip(self))]
-    pub async fn refresh_token(&self, refresh_token: &str) -> Result<TokenPair, AuthError> {
-        match self.jwt_service.refresh_tokens(refresh_token).await {
-            Ok(new_tokens) => {
-                info!("Successfully refreshed access token");
-                Ok(new_tokens)
-            }
-            Err(e) => {
-                warn!(error = %e, "Failed to refresh access token");
-                Err(AuthError::InvalidToken)
-            }
-        }
-    }
 } 

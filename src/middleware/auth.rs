@@ -16,6 +16,7 @@ use crate::{
 #[derive(Clone)]
 pub struct CurrentUser(pub User);
 
+// TODO: Switch to using cookies instead of headers
 pub async fn auth_middleware(
     State(state): State<AppState>,
     mut request: Request<Body>,

@@ -28,12 +28,16 @@ mod middleware;
 mod tests;
 
 use services::jwt_service::JwtService;
+use services::cookie_service::CookieService;
+use services::auth_service::AuthService;
 
 #[derive(Clone)]
 pub struct AppState {
     db: SqlitePool,
     redis: db::RedisStore,
     jwt_service: JwtService,
+    cookie_service: CookieService,
+    auth_service: AuthService,
 }
 
 #[derive(Serialize)]

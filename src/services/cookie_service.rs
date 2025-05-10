@@ -8,6 +8,8 @@ const SECURE: bool = true; // Set to true for HTTPS
 const HTTP_ONLY: bool = true;
 const SAME_SITE: tower_cookies::SameSite = tower_cookies::SameSite::Strict;
 
+
+#[derive(Clone)]
 pub struct CookieService;
 
 impl CookieService {

@@ -99,8 +99,8 @@ impl JwtService {
         }
 
         // everything checks out ⇒ revoke old refresh & build new pair
-        self.revoke_token(refresh_token, claims.exp - Utc::now().timestamp())
-            .await;
+        self.revoke_token(refresh_token)
+            .await?;
 
         self.redis_store
             .remove_from_allowlist(&claims.jti)
@@ -112,17 +112,17 @@ impl JwtService {
 
     /// Revoke a token (access *or* refresh) immediately.
     #[instrument(skip(self))]
-    pub async fn revoke_token(&self, token: &str, ttl_seconds: i64) {
-        if ttl_seconds <= 0 {
-            return;
-        }
-        if let Err(e) = self
-            .redis_store
-            .blacklist_token(token, ttl_seconds as usize)
+    pub async fn revoke_token(&self, token: &str) -> Result<(), JwtError> {
+        let claims = self.decode_jwt::<RefreshClaims>(token)?;
+
+        let ttl = (claims.exp - Utc::now().timestamp()) as usize;
+        self.redis_store
+            .blacklist_token(token, ttl)
             .await
-        {
-            error!(error = %e, "Failed to blacklist token");
-        }
+            .map_err(|e| {
+                error!(error = %e, "Failed to blacklist token");
+                JwtError::from(ErrorKind::InvalidToken)
+            })
     }
 
     /* ---------- PRIVATE HELPERS ---------- */

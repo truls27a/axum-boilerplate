@@ -5,10 +5,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::services::auth_service::{AuthService, AuthError};
+use crate::services::auth_service::{AuthError};
 use crate::services::cookie_service::CookieService;
 use crate::AppState;
-
+use jsonwebtoken::{
+    errors::Error as JwtError, errors::ErrorKind
+};
 #[derive(Deserialize)]
 pub struct LoginRequest {
     email: String,
@@ -34,16 +36,15 @@ pub struct LoginResponse {
 
 #[derive(Serialize)]
 pub struct RefreshTokenResponse {
-    access_token: String,
+    message: String,
 }
 
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<LoginResponse>), StatusCode> {
-    let auth_service = AuthService::new(state.db, state.jwt_service);
     
-    let token_pair = auth_service
+    let token_pair = state.auth_service
         .login(&payload.email, &payload.password)
         .await
         .map_err(|e| match e {
@@ -63,9 +64,7 @@ pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, StatusCode> {
-    let auth_service = AuthService::new(state.db, state.jwt_service);
-    
-    let id = auth_service
+    let id = state.auth_service
         .register(&payload.username, &payload.password, &payload.email)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -80,18 +79,20 @@ pub async fn refresh_token(
     let refresh_token = CookieService::extract_refresh_token(&headers)
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let auth_service = AuthService::new(state.db, state.jwt_service);
     
-    let new_access_token = auth_service
-        .refresh_token(&refresh_token)
+    let new_access_token = state.jwt_service
+        .refresh_tokens(&refresh_token)
         .await
-        .map_err(|e| match e {
-            AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
+        .map_err(|e| match e.kind() {
+            ErrorKind::InvalidToken => StatusCode::UNAUTHORIZED,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         })?;
 
-    Ok((HeaderMap::new(), Json(RefreshTokenResponse { 
-        access_token: new_access_token 
+    // Set auth cookies
+    let headers = CookieService::set_auth_cookies(&new_access_token.access_token, &new_access_token.refresh_token);
+
+    Ok((headers, Json(RefreshTokenResponse { 
+        message: "Tokens refreshed successfully".to_string(),
     })))
 }
 
@@ -102,11 +103,10 @@ pub async fn logout(
     let refresh_token = CookieService::extract_refresh_token(&headers)
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let auth_service = AuthService::new(state.db, state.jwt_service);
     
-    // Revoke the refresh token in your database if needed
-    auth_service
-        .revoke_refresh_token(&refresh_token)
+    // Revoke the refresh token
+    state.jwt_service
+        .revoke_token(&refresh_token)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
