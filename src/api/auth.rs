@@ -6,6 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::services::auth_service::{AuthService, AuthError};
+use crate::services::cookie_service::CookieService;
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -50,8 +51,8 @@ pub async fn login(
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         })?;
 
-
-    // Create tokens and set them in cookies
+    // Set auth cookies
+    let headers = CookieService::set_auth_cookies(&token_pair.access_token, &token_pair.refresh_token);
 
     Ok((headers, Json(LoginResponse { 
         message: "Login successful".to_string(),
@@ -76,7 +77,7 @@ pub async fn refresh_token(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<(HeaderMap, Json<RefreshTokenResponse>), StatusCode> {
-    let refresh_token = CookieManager::extract_refresh_token(&headers)
+    let refresh_token = CookieService::extract_refresh_token(&headers)
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let auth_service = AuthService::new(state.db, state.jwt_service);
@@ -98,7 +99,19 @@ pub async fn logout(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<HeaderMap, StatusCode> {
-    // Revoke the refresh token
-    // Delete the cookies
-    // Return message
+    let refresh_token = CookieService::extract_refresh_token(&headers)
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let auth_service = AuthService::new(state.db, state.jwt_service);
+    
+    // Revoke the refresh token in your database if needed
+    auth_service
+        .revoke_refresh_token(&refresh_token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Clear auth cookies
+    let headers = CookieService::clear_auth_cookies();
+    
+    Ok(headers)
 }
