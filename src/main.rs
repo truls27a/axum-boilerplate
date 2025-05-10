@@ -56,7 +56,7 @@ pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
     
     // Create the JWT service
     let jwt_service = JwtService::new(redis_store.clone(), secret_key);
-    let auth_service = AuthService::new(pool, jwt_service);
+    let auth_service = AuthService::new(pool.clone(), jwt_service.clone());
 
     let state = AppState {
         db: pool,
