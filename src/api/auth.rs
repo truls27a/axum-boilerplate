@@ -6,11 +6,12 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::services::auth_service::{AuthError};
-use crate::services::cookie_service::CookieService;
 use crate::AppState;
 use jsonwebtoken::{
     errors::Error as JwtError, errors::ErrorKind
 };
+use crate::services::cookie_service::CookieService;
+
 #[derive(Deserialize)]
 pub struct LoginRequest {
     email: String,

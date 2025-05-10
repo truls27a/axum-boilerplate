@@ -21,7 +21,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod db;
 mod api;
 mod models;
-mod utils;
 mod services;
 mod middleware;
 #[cfg(test)]
@@ -36,7 +35,6 @@ pub struct AppState {
     db: SqlitePool,
     redis: db::RedisStore,
     jwt_service: JwtService,
-    cookie_service: CookieService,
     auth_service: AuthService,
 }
 
@@ -58,11 +56,13 @@ pub fn create_router(pool: SqlitePool, redis_store: db::RedisStore) -> Router {
     
     // Create the JWT service
     let jwt_service = JwtService::new(redis_store.clone(), secret_key);
+    let auth_service = AuthService::new(pool, jwt_service);
 
     let state = AppState {
         db: pool,
         redis: redis_store,
         jwt_service,
+        auth_service,
     };
 
     // Create a CORS layer
