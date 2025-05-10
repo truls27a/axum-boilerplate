@@ -1,12 +1,13 @@
 use axum::http::{HeaderMap, HeaderValue};
 use time::{Duration, OffsetDateTime};
 use tower_cookies::{Cookie, Cookies};
+use cookie::SameSite;
 
 const ACCESS_TOKEN_COOKIE: &str = "access_token";
 const REFRESH_TOKEN_COOKIE: &str = "refresh_token";
 const SECURE: bool = true; // Set to true for HTTPS
 const HTTP_ONLY: bool = true;
-const SAME_SITE: tower_cookies::SameSite = tower_cookies::SameSite::Strict;
+const SAME_SITE: SameSite = SameSite::Strict;
 
 
 #[derive(Clone)]
@@ -79,22 +80,22 @@ impl CookieService {
     fn create_cookie(name: &str, value: &str, max_age: Duration) -> Cookie<'static> {
         let expires = OffsetDateTime::now_utc() + max_age;
         
-        Cookie::build(name, value.to_string())
-            .secure(SECURE)
-            .http_only(HTTP_ONLY)
-            .same_site(SAME_SITE)
-            .path("/")
-            .expires(expires)
-            .build()
+        let mut cookie = Cookie::new(name.to_owned(), value.to_owned());
+        cookie.set_secure(SECURE);
+        cookie.set_http_only(HTTP_ONLY);
+        cookie.set_same_site(Some(SAME_SITE));
+        cookie.set_path("/");
+        cookie.set_expires(expires);
+        cookie
     }
 
     fn create_removal_cookie(name: &str) -> Cookie<'static> {
-        Cookie::build(name, "")
-            .secure(SECURE)
-            .http_only(HTTP_ONLY)
-            .same_site(SAME_SITE)
-            .path("/")
-            .expires(OffsetDateTime::now_utc() - Duration::days(1))
-            .build()
+        let mut cookie = Cookie::new(name.to_owned(), String::new());
+        cookie.set_secure(SECURE);
+        cookie.set_http_only(HTTP_ONLY);
+        cookie.set_same_site(Some(SAME_SITE));
+        cookie.set_path("/");
+        cookie.set_expires(OffsetDateTime::now_utc() - Duration::days(1));
+        cookie
     }
 }
