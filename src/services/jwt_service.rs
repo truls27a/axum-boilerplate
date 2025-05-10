@@ -4,7 +4,7 @@ use crate::models::jwt::{AccessClaims, RefreshClaims, TokenPair};
 
 use chrono::Utc;
 use jsonwebtoken::{
-    decode, encode, errors::Error as JwtError, Algorithm, DecodingKey, EncodingKey, Header,
+    decode, encode, errors::Error as JwtError, errors::ErrorKind, Algorithm, DecodingKey, EncodingKey, Header,
     Validation,
 };
 use tracing::{error, info, instrument};
@@ -15,13 +15,13 @@ pub struct JwtService {
     redis_store: RedisStore,
     secret_key: String,
     enc_key: EncodingKey,
-    dec_key: DecodingKey<'static>,
+    dec_key: DecodingKey,
 }
 
 impl JwtService {
     pub fn new(redis_store: RedisStore, secret_key: String) -> Self {
         let enc_key = EncodingKey::from_secret(secret_key.as_bytes());
-        let dec_key = DecodingKey::from_secret(secret_key.as_bytes()).into_static();
+        let dec_key = DecodingKey::from_secret(secret_key.as_bytes());
 
         Self {
             redis_store,
@@ -64,7 +64,7 @@ impl JwtService {
     #[instrument(skip(self))]
     pub async fn verify_access_token(&self, token: &str) -> Result<AccessClaims, JwtError> {
         if self.redis_store.is_blacklisted(token).await.unwrap_or(false) {
-            return Err(JwtError::ExpiredSignature);
+            return Err(ErrorKind::ExpiredSignature.into());
         }
         let data = self.decode_jwt::<AccessClaims>(token)?;
 
@@ -83,7 +83,7 @@ impl JwtService {
             .await
             .unwrap_or(false)
         {
-            return Err(JwtError::InvalidToken);
+            return Err(ErrorKind::InvalidToken.into());
         }
 
         let claims = self.decode_jwt::<RefreshClaims>(refresh_token)?;
@@ -95,7 +95,7 @@ impl JwtService {
             .await
             .unwrap_or(false)
         {
-            return Err(JwtError::InvalidToken);
+            return Err(ErrorKind::InvalidToken.into());
         }
 
         // everything checks out ⇒ revoke old refresh & build new pair
