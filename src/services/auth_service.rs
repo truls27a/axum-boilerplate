@@ -75,7 +75,7 @@ impl AuthService {
         }
 
         // Generate JWT tokens
-        match self.jwt_service.create_token_pair(user.id).await {
+        match self.jwt_service.create_tokens(user.id).await {
             Ok(token_pair) => {
                 info!(user_id = %user.id, email = %email, "User successfully logged in");
                 Ok(token_pair)
@@ -122,7 +122,7 @@ impl AuthService {
     #[instrument(skip(self))]
     pub async fn verify_token(&self, token: &str) -> Result<User, AuthError> {
         // Decode and verify the token
-        let claims = match self.jwt_service.decode_access_token(token).await {
+        let claims = match self.jwt_service.verify_access_token(token).await {
             Ok(claims) => claims,
             Err(e) => {
                 warn!(error = %e, "Invalid token verification attempt");
@@ -144,11 +144,11 @@ impl AuthService {
     }
 
     #[instrument(skip(self))]
-    pub async fn refresh_token(&self, refresh_token: &str) -> Result<String, AuthError> {
-        match self.jwt_service.refresh_access_token(refresh_token).await {
-            Ok(new_access_token) => {
+    pub async fn refresh_token(&self, refresh_token: &str) -> Result<TokenPair, AuthError> {
+        match self.jwt_service.refresh_tokens(refresh_token).await {
+            Ok(new_tokens) => {
                 info!("Successfully refreshed access token");
-                Ok(new_access_token)
+                Ok(new_tokens)
             }
             Err(e) => {
                 warn!(error = %e, "Failed to refresh access token");
