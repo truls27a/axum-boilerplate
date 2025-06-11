@@ -50,28 +50,32 @@ A production-ready Rust API boilerplate built with Axum, featuring JWT authentic
 
 ## Architecture Overview
 
-The boilerplate follows a clean, modular architecture:
+The boilerplate follows a clean, layered architecture with clear separation of concerns:
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   HTTP Client   │    │      Redis      │    │     SQLite      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       │                       │
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Axum Router   │────│  JWT Service    │────│   Auth Service  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Auth Middleware│    │ Cookie Service  │    │   User Model    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    HTTP Layer                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │   Router    │  │ Middleware  │  │ API Handlers│    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                  Business Layer                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │Auth Service │  │ JWT Service │  │Cookie Service│    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                   Data Layer                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │ User Model  │  │   SQLite    │  │    Redis    │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+└─────────────────────────────────────────────────────────┘
 ```
 
-- **API Layer**: HTTP endpoints and request/response handling
-- **Middleware**: Authentication and request processing
-- **Services**: Business logic for authentication, JWT management, and cookies
-- **Models**: Data structures and database operations
-- **Database**: SQLite for persistent storage, Redis for token management
+- **HTTP Layer**: Request routing, middleware processing, and API endpoint handlers
+- **Business Layer**: Core authentication logic, JWT token management, and cookie utilities
+- **Data Layer**: User data models, persistent storage (SQLite), and session management (Redis)
 
 ## Quick Start
 
