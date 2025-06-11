@@ -4,21 +4,28 @@ A production-ready Rust API boilerplate built with Axum, featuring JWT authentic
 
 ## Table of Contents
 
-- [Features](#features)
-- [Technology Stack](#technology-stack)
-- [Architecture Overview](#architecture-overview)
-- [Quick Start](#quick-start)
-- [Installation & Setup](#installation--setup)
-- [Environment Configuration](#environment-configuration)
-- [API Endpoints](#api-endpoints)
-- [Authentication Flow](#authentication-flow)
-- [Database Schema](#database-schema)
-- [Testing](#testing)
-- [Project Structure](#project-structure)
-- [Development Guidelines](#development-guidelines)
-- [Future Plans](#future-plans)
-- [Contributing](#contributing)
-- [License](#license)
+<details>
+<summary>Click to expand</summary>
+
+| Section | Description |
+|---------|-------------|
+| [Features](#features) | Key features and capabilities |
+| [Technology Stack](#technology-stack) | Technologies and frameworks used |
+| [Architecture Overview](#architecture-overview) | System design and component overview |
+| [Quick Start](#quick-start) | Get up and running in 5 steps |
+| [Installation & Setup](#installation--setup) | Detailed setup instructions |
+| [Environment Configuration](#environment-configuration) | Environment variables and configuration |
+| [API Endpoints](#api-endpoints) | Complete API documentation |
+| [Authentication Flow](#authentication-flow) | JWT authentication system explanation |
+| [Database Schema](#database-schema) | Database tables and structure |
+| [Testing](#testing) | Running and understanding tests |
+| [Project Structure](#project-structure) | Code organization and modules |
+| [Development Guidelines](#development-guidelines) | Development best practices |
+| [Future Plans](#future-plans) | Upcoming features and improvements |
+| [Contributing](#contributing) | How to contribute to the project |
+| [License](#license) | License information |
+
+</details>
 
 ## Features
 
