@@ -81,7 +81,7 @@ The boilerplate follows a clean, layered architecture with clear separation of c
 
 1. **Clone the repository**
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/truls27a/axum-boilerplate
 cd axum-boilerplate
 ```
 
@@ -136,7 +136,7 @@ source ~/.cargo/env
 
 2. **Clone and navigate to the project**:
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/truls27a/axum-boilerplate
 cd axum-boilerplate
 ```
 
